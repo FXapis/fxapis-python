@@ -1,0 +1,64 @@
+# Publishes to PyPI via Trusted Publishing (OIDC) -- no API token exists
+# anywhere, so there is no long-lived publish credential to leak or rotate.
+# PyPI mints a short-lived token for this run alone, scoped to this repo,
+# this workflow file and the "pypi" environment.
+#
+# Unlike npm, PyPI lets you register the trust relationship for a project
+# name that has never been published: a maintainer adds a "pending
+# publisher" once, at https://pypi.org/manage/account/publishing/ --
+# project name "fxapis", owner "FXapis", repo "fxapis-python", workflow
+# file "release.yml", environment "pypi" -- and this workflow's first
+# successful run both creates the project and converts the pending
+# publisher into the real one. Nothing manual after that.
+#
+# Building happens in its own job and only ever downloads, never rebuilds,
+# the artifact the publish job uploads -- the officially recommended shape
+# (packaging.python.org), so what's published is provably what was built
+# and tested, not a second, slightly different build.
+name: release
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: the tag must match pyproject.toml's version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          pkg="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml","rb"))["project"]["version"])')"
+          if [ "$tag" != "$pkg" ]; then
+            echo "::error::tag v$tag does not match pyproject.toml version $pkg"
+            exit 1
+          fi
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: mypy
+      - run: pytest -q
+      - run: pip install --upgrade build
+      - run: python3 -m build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pypi-dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fxapis/
+    permissions:
+      id-token: write # the OIDC token Trusted Publishing exchanges for a publish credential
+    steps:
+      - uses: actions/download-artifact@v5
+        with:
+          name: pypi-dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
