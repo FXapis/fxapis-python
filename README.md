@@ -56,7 +56,9 @@ pip install fxapis
 ```
 
 > [!NOTE]
-> This package is not yet published to PyPI. Until it is, install straight from this repository:
+> This package is not yet published to PyPI (the release pipeline is set up — see
+> [`.github/workflows/release.yml`](.github/workflows/release.yml) — and is waiting on a pending
+> publisher being registered at pypi.org). Until then, install straight from this repository:
 > `pip install git+https://github.com/FXapis/fxapis-python.git`, or clone it and
 > `pip install -e .`. `pip install fxapis` above is what it will be once published — nothing
 > else about the API changes when that happens.
