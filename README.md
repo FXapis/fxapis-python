@@ -252,6 +252,9 @@ Everything in the API — including API keys, members and billing — is in the 
 
 ## Contributing
 
+What changed in each version is in [CHANGELOG.md](CHANGELOG.md), and how a version is released in
+[RELEASING.md](RELEASING.md).
+
 ```bash
 pip install -e ".[dev]"
 ruff check .
