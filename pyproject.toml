@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fxapis"
-version = "0.1.0"
+version = "0.1.1"
 description = "MT5 Python SDK for fxapis, the hosted MetaTrader 5 REST API: trade MT5 accounts with no terminal, VPS or EA."
 readme = "README.md"
 license = "MIT"

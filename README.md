@@ -10,6 +10,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-22D3D6?style=flat-square)](LICENSE)
 [![ci](https://img.shields.io/github/actions/workflow/status/FXapis/fxapis-python/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/FXapis/fxapis-python/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/fxapis?style=flat-square&color=22D3D6)](https://pypi.org/project/fxapis/)
 [![release](https://img.shields.io/github/v/release/FXapis/fxapis-python?style=flat-square&color=22D3D6)](https://github.com/FXapis/fxapis-python/releases)
 [![Python](https://img.shields.io/badge/python-3.10%E2%80%933.14-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org)
 [![types](https://img.shields.io/badge/types-strict%20mypy-3178C6?style=flat-square)](pyproject.toml)
@@ -31,9 +32,6 @@ You run **no MetaTrader terminal, no Windows VPS and no EA**. fxapis runs the MT
 
 MT5 only (MT4 is not supported).
 
-> [!IMPORTANT]
-> Not yet published to PyPI — see [Installation](#installation).
-
 ## Table of contents
 
 - [Installation](#installation)
@@ -54,14 +52,6 @@ MT5 only (MT4 is not supported).
 ```bash
 pip install fxapis
 ```
-
-> [!NOTE]
-> This package is not yet published to PyPI (the release pipeline is set up — see
-> [`.github/workflows/release.yml`](.github/workflows/release.yml) — and is waiting on a pending
-> publisher being registered at pypi.org). Until then, install straight from this repository:
-> `pip install git+https://github.com/FXapis/fxapis-python.git`, or clone it and
-> `pip install -e .`. `pip install fxapis` above is what it will be once published — nothing
-> else about the API changes when that happens.
 
 Python 3.10+. Create an API key in the console at [fxapis.com](https://fxapis.com) and export it:
 
