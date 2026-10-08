@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-10-08
+
+- Multi-account orders accept up to 1,000 accounts (was 500), matching the API; your plan's own limit still applies.
+- ACCOUNT_LEASED_ELSEWHERE, ACCOUNT_EXECUTING and SESSIONS_NOT_SYNCED prove nothing was done: the client retries them, and retryable is true for them.
+
 ## [0.1.1] — 2026-10-08
 
 - First release on PyPI: `pip install fxapis`. Same client as 0.1.0.

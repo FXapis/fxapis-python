@@ -20,6 +20,7 @@ import httpx
 
 from ._version import __version__
 from .errors import (
+    NOTHING_DONE_CODES,
     APIConnectionError,
     APIStatusError,
     FxapisError,
@@ -48,9 +49,7 @@ UNRESOLVED_ORDER_STATES: Final = frozenset({"unknown", "validating", "sending"})
 FINAL_WAVE_STATES: Final = frozenset({"settled", "cancelled", "abandoned"})
 
 #: Codes that prove nothing was done, so the same request may simply be sent again.
-_NOTHING_DONE: Final = frozenset(
-    {"SEND_FAILED", "ACCOUNT_NOT_READY", "NO_RUNTIME", "IDEMPOTENCY_IN_FLIGHT", "RATE_LIMITED"}
-)
+_NOTHING_DONE: Final = NOTHING_DONE_CODES
 
 
 class _Unset:
@@ -622,8 +621,8 @@ def op_create_wave(
     ids = list(dict.fromkeys(account_ids))
     if not ids:
         raise ValueError("a multi-account order needs at least one account id")
-    if len(ids) > 500:
-        raise ValueError("a multi-account order accepts at most 500 accounts")
+    if len(ids) > 1000:
+        raise ValueError("a multi-account order accepts at most 1,000 accounts")
     body = compact(
         {
             "accountIds": ids,

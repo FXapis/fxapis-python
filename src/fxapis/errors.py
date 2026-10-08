@@ -13,7 +13,7 @@ resend it either -- poll the order (``client.orders.wait_until_resolved``).
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Final
 
 __all__ = [
     "FxapisError",
@@ -85,6 +85,22 @@ class WaitTimeoutError(FxapisError, TimeoutError):
         self.last = last
 
 
+#: Codes proving nothing was done, so the same request may simply be sent again:
+#: the library retries them itself, and ``retryable`` is true for them.
+NOTHING_DONE_CODES: Final = frozenset(
+    {
+        "SEND_FAILED",
+        "ACCOUNT_NOT_READY",
+        "NO_RUNTIME",
+        "IDEMPOTENCY_IN_FLIGHT",
+        "RATE_LIMITED",
+        "ACCOUNT_LEASED_ELSEWHERE",
+        "ACCOUNT_EXECUTING",
+        "SESSIONS_NOT_SYNCED",
+    }
+)
+
+
 class APIStatusError(FxapisError):
     """The API answered with a non-2xx status."""
 
@@ -132,7 +148,7 @@ class APIStatusError(FxapisError):
 
     @property
     def retryable(self) -> bool:
-        if self.code in self._RETRYABLE_CODES:
+        if self.code in self._RETRYABLE_CODES or self.code in NOTHING_DONE_CODES:
             return True
         return any(isinstance(d, dict) and d.get("retryable") is True for d in self.details)
 

@@ -500,6 +500,20 @@ def test_deals_iter(client: Fxapis, api: Recorder) -> None:
     assert [d["id"] for d in client.deals.iter(ACCOUNT)] == ["d1", "d2"]
 
 
+def test_wave_accepts_up_to_1000_accounts(client: Fxapis, api: Recorder) -> None:
+    api.responses.append((201, {"data": {"id": "w1", "state": "planned"}}))
+    ids = [f"acc-{i}" for i in range(1000)]
+    client.multi_account_orders.create(account_ids=ids, symbol="EURUSD", side="buy", volume="0.01")
+    with pytest.raises(ValueError, match="1,000"):
+        client.multi_account_orders.create(account_ids=[*ids, "one-more"], symbol="EURUSD", side="buy", volume="0.01")
+
+
+def test_busy_account_is_retried_since_nothing_was_done(client: Fxapis, api: Recorder) -> None:
+    api.responses += [error("ACCOUNT_LEASED_ELSEWHERE", 409), (200, {"data": []})]
+    assert client.accounts.list() == []
+    assert len(api.requests) == 2
+
+
 def test_wave_create_and_settle(client: Fxapis, api: Recorder) -> None:
     wave = {"id": "w1", "state": "planned"}
     api.responses += [
