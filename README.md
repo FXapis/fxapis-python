@@ -177,7 +177,7 @@ A multi-account order ("execution wave") brings every account online, then sends
 
 ```python
 wave = client.waves.create(
-    account_ids=follower_ids,  # up to 500
+    account_ids=follower_ids,  # up to 1,000, within your plan's limit
     symbol="EURUSD",
     side="buy",
     volume="0.10",
