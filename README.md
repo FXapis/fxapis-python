@@ -29,6 +29,7 @@ You run **no MetaTrader terminal, no Windows VPS and no EA**. fxapis runs the MT
 - **Automatic `Idempotency-Key`** on every order, with an override for your own keys
 - **Typed exceptions** for every API error code — and safe retries that never resend an unresolved order
 - **Helpers:** `wait_until_ready()`, `wait_until_resolved()`, `wait_until_settled()`, pagination iterators
+- **`fxapis.webhooks.verify()`** checks every webhook delivery's signature
 
 MT5 only (MT4 is not supported).
 
@@ -39,6 +40,7 @@ MT5 only (MT4 is not supported).
 - [Handling order outcomes](#handling-order-outcomes)
 - [Click-to-trade and signals](#click-to-trade-and-signals)
 - [Copy trading: one trade on many accounts](#copy-trading-one-trade-on-many-accounts)
+- [Webhooks](#webhooks)
 - [Async](#async)
 - [Reference](#reference)
 - [Good to know](#good-to-know)
@@ -189,7 +191,30 @@ wave = client.waves.wait_until_settled(wave["id"])
 print(wave["summary"], wave["dispatchSpreadMs"])
 ```
 
-`client.multi_account_orders` is the same resource under a descriptive name. There are no event webhooks yet: to follow a master account, poll its deals (`client.deals.list(master_id, since=...)`) — see [`copy_trader.py`](https://github.com/FXapis/fxapis-examples/blob/main/python/copy_trader.py).
+`client.multi_account_orders` is the same resource under a descriptive name. To follow a master account, poll its deals (`client.deals.list(master_id, since=...)`) as [`copy_trader.py`](https://github.com/FXapis/fxapis-examples/blob/main/python/copy_trader.py) does, or subscribe a [webhook](#webhooks) to `position.opened` and `position.closed`.
+
+## Webhooks
+
+Register an HTTPS endpoint — in the console under **Webhooks**, or with `POST /v1/webhooks` — and fxapis POSTs a signed event to it when something happens: an order filled, rejected or left unresolved, a position opened or closed, an account changing state, a multi-account order finishing. The endpoint's `whsec_…` secret is shown once, when you create it.
+
+Check every delivery before trusting it. Pass the body exactly as it arrived (`bytes` or `str`), before any JSON parsing:
+
+```python
+from fxapis import WebhookVerificationError, webhooks
+
+@app.post("/fxapis/webhooks")
+def receive(request):
+    try:
+        event = webhooks.verify(request.body, request.headers.get("fxapis-signature"), FXAPIS_WEBHOOK_SECRET)
+    except WebhookVerificationError:
+        return Response(status=400)
+    if already_handled(event["id"]):  # deliveries can repeat: deduplicate on the event id
+        return Response(status=200)
+    handle(event)  # event["type"], event["data"] — the resource as the API returns it
+    return Response(status=200)
+```
+
+`verify()` rejects a signature more than 5 minutes old (`tolerance=` to change it), and during a secret rotation accepts either secret. Answer within 10 seconds; failed deliveries are retried for about 45 hours. Event types, payloads, retries and rotation: the [webhooks guide](https://docs.fxapis.com/guides/webhooks).
 
 ## Async
 
@@ -239,7 +264,7 @@ Everything in the API — including API keys, members and billing — is in the 
 - **Positions are a snapshot.** Each has `observedAt`; call `accounts.reconcile()` for a fresh read while the account is online.
 - **Scoped keys.** Keys can be read-only or reduce-only (can close, cannot open) — give each service the least it needs.
 - **Wrong password?** `accounts.replace_credentials(id, password=...)` fixes it on the same account; connecting a *disconnected* login again brings the same account back. `accounts.delete(id)` removes an account and its history for good.
-- **No event webhooks yet.** Poll `status`, orders and deals. (Incoming TradingView alerts are supported — see `client.alert_hooks`.)
+- **Events or polling.** [Webhooks](#webhooks) tell you when an order fills or an account changes state; polling `status`, orders and deals still works everywhere. (Incoming TradingView alerts are a separate feature — see `client.alert_hooks`.)
 
 ## Related fxapis repositories
 
