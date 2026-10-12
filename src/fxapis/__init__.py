@@ -12,6 +12,7 @@ HTTPS, with no MetaTrader terminal, VPS or EA of your own.
 Docs: https://docs.fxapis.com
 """
 
+from . import webhooks
 from ._async_client import AsyncFxapis
 from ._base import UNSET
 from ._client import Fxapis
@@ -48,6 +49,7 @@ from .errors import (
     WaitTimeoutError,
 )
 from .types import Page
+from .webhooks import WebhookVerificationError
 
 __all__ = [
     "Fxapis",
@@ -55,7 +57,9 @@ __all__ = [
     "UNSET",
     "Page",
     "__version__",
+    "webhooks",
     "FxapisError",
+    "WebhookVerificationError",
     "APIConnectionError",
     "APITimeoutError",
     "APIStatusError",

@@ -6,6 +6,10 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.3] — 2026-10-11
+
+- Webhooks: fxapis.webhooks.verify(payload, signature_header, secret) checks a delivery's fxapis-signature header and returns the event as a dict; it raises fxapis.WebhookVerificationError when the signature is missing, malformed, more than 5 minutes old or does not match. During a secret rotation either signature is accepted.
+
 ## [0.1.2] — 2026-10-08
 
 - Multi-account orders accept up to 1,000 accounts (was 500), matching the API; your plan's own limit still applies.
