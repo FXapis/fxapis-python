@@ -191,6 +191,12 @@ wave = client.waves.wait_until_settled(wave["id"])
 print(wave["summary"], wave["dispatchSpreadMs"])
 ```
 
+When the accounts are at different brokers, name an instrument instead of a broker symbol, and each account gets its own broker's symbol (from 0.1.4; pass exactly one of `symbol` and `instrument`):
+
+```python
+wave = client.waves.create(account_ids=follower_ids, instrument="XAUUSD", side="buy", volume="0.10")
+```
+
 `client.multi_account_orders` is the same resource under a descriptive name. To follow a master account, poll its deals (`client.deals.list(master_id, since=...)`) as [`copy_trader.py`](https://github.com/FXapis/fxapis-examples/blob/main/python/copy_trader.py) does, or subscribe a [webhook](#webhooks) to `position.opened` and `position.closed`.
 
 ## Webhooks
