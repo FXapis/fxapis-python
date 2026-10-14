@@ -6,6 +6,10 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-10-14
+
+- waves.create() accepts instrument= instead of symbol=, for multi-account orders across accounts at different brokers (exactly one of the two)
+
 ## [0.1.3] — 2026-10-11
 
 - Webhooks: fxapis.webhooks.verify(payload, signature_header, secret) checks a delivery's fxapis-signature header and returns the event as a dict; it raises fxapis.WebhookVerificationError when the signature is missing, malformed, more than 5 minutes old or does not match. During a secret rotation either signature is accepted.

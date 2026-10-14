@@ -292,6 +292,7 @@ class WaveSummary(TypedDict, total=False):
 class WaveLeg(TypedDict, total=False):
     accountId: str
     orderId: str | None
+    symbol: str
     volume: str | None
     state: Literal["pending", "preparing", "ready", "dispatched", "filled", "rejected", "skipped", "unresolved"]
     stateDetail: str | None
@@ -303,7 +304,8 @@ class Wave(TypedDict, total=False):
     id: str
     label: str | None
     clientWaveId: str | None
-    symbol: str
+    symbol: str | None
+    instrument: str | None
     side: Side
     baseVolume: str | None
     state: WaveState

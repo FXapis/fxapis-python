@@ -604,7 +604,8 @@ def op_calculate(
 def op_create_wave(
     *,
     account_ids: list[str],
-    symbol: str,
+    symbol: str | None = None,
+    instrument: str | None = None,
     side: str,
     volume: Number,
     weights: dict[str, Number] | None,
@@ -618,6 +619,8 @@ def op_create_wave(
     expires_at: Timestamp | None,
     idempotency_key: str | None,
 ) -> Request:
+    if (symbol is None) == (instrument is None):
+        raise ValueError("give a multi-account order a symbol or instrument, not both and not neither")
     ids = list(dict.fromkeys(account_ids))
     if not ids:
         raise ValueError("a multi-account order needs at least one account id")
@@ -627,6 +630,7 @@ def op_create_wave(
         {
             "accountIds": ids,
             "symbol": symbol,
+            "instrument": instrument,
             "side": side,
             "volume": fmt_number(volume),
             "weights": None if weights is None else {k: fmt_number(v) for k, v in weights.items()},

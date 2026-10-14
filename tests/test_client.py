@@ -657,3 +657,23 @@ def test_alert_hooks_create_update_rotate_and_deliveries(client: Fxapis, api: Re
 
     deliveries = client.alert_hooks.deliveries("h1")
     assert deliveries[0]["status"] == "accepted"
+
+
+def test_waves_create_by_instrument_sends_instrument_not_symbol(client: Fxapis, api: Recorder) -> None:
+    api.responses.append((201, {"data": {"id": "w1", "symbol": None, "instrument": "XAUUSD", "legs": []}}))
+    client.multi_account_orders.create(account_ids=["a1", "a2"], instrument="XAUUSD", side="buy", volume="0.01")
+    body = api.body()
+    assert body["instrument"] == "XAUUSD"
+    assert "symbol" not in body
+
+
+@pytest.mark.parametrize("kwargs", [{}, {"symbol": "XAUUSD.a", "instrument": "XAUUSD"}])
+def test_waves_create_needs_exactly_one_of_symbol_or_instrument(kwargs: dict[str, str]) -> None:
+    from fxapis import _base as b
+
+    with pytest.raises(ValueError, match="symbol or instrument"):
+        b.op_create_wave(
+            account_ids=["a1"], side="buy", volume="0.01", weights=None, stop_loss=None, take_profit=None,
+            comment=None, label=None, client_wave_id=None, barrier_policy=None, execute_at=None,
+            expires_at=None, idempotency_key=None, **kwargs,
+        )

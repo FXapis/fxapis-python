@@ -705,7 +705,8 @@ class Waves(_Resource):
         self,
         *,
         account_ids: builtins.list[str],
-        symbol: str,
+        symbol: str | None = None,
+        instrument: str | None = None,
         side: Side,
         volume: Number,
         weights: dict[str, Number] | None = None,
@@ -719,7 +720,9 @@ class Waves(_Resource):
         expires_at: Timestamp | None = None,
         idempotency_key: str | None = None,
     ) -> Wave:
-        """Places one order on each account (up to 500). Returns at once; follow it with ``wait_until_settled``.
+        """Places one order on each account (up to 1,000). Name a ``symbol`` every account trades, or an
+        ``instrument`` (e.g. ``"XAUUSD"``) each account trades under its own broker's symbol. Returns at once;
+        follow it with ``wait_until_settled``.
 
         ``weights`` maps account id to its own volume. ``barrier_policy``
         decides what happens when some accounts are not online in time:
@@ -728,6 +731,7 @@ class Waves(_Resource):
         request = b.op_create_wave(
             account_ids=account_ids,
             symbol=symbol,
+            instrument=instrument,
             side=side,
             volume=volume,
             weights=weights,
