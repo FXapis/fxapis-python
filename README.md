@@ -220,7 +220,20 @@ def receive(request):
     return Response(status=200)
 ```
 
-`verify()` rejects a signature more than 5 minutes old (`tolerance=` to change it), and during a secret rotation accepts either secret. Answer within 10 seconds; failed deliveries are retried for about 45 hours. Event types, payloads, retries and rotation: the [webhooks guide](https://docs.fxapis.com/guides/webhooks).
+`verify()` rejects a signature more than 5 minutes old (`tolerance=` to change it), and during a secret rotation accepts either secret. Answer within 10 seconds; failed deliveries are retried for about two days. Event types, payloads, retries and rotation: the [webhooks guide](https://docs.fxapis.com/guides/webhooks).
+
+### Catch up after downtime
+
+From 0.1.5, the event log lets a receiver that was down pick up what it missed. Store the id of the last event you processed **from a list page** (never a webhook's id: webhooks can arrive out of order), and on startup read everything after it:
+
+```python
+for event in client.events.iter(after=last_listed_id):  # oldest first
+    if not already_handled(event["id"]):
+        handle(event)  # the same shape a webhook delivers
+    last_listed_id = event["id"]
+```
+
+Events appear in the list a few seconds after they happen, and are kept 7, 30 or 90 days depending on your plan. `client.events.list(delivery_status="failed")` shows events an endpoint did not receive, and `client.webhooks.replay(endpoint_id, since=...)` re-sends them (failed ones only, unless `include="all"`). `client.webhooks.deliveries()` and `client.webhooks.delivery()` read an endpoint's delivery log.
 
 ## Async
 
@@ -252,6 +265,8 @@ asyncio.run(main())
 | `client.calculate` | `margin()`, `profit()` |
 | `client.waves` (= `client.multi_account_orders`) | `create()`, `get()`, `list()`, `cancel()`, `wait_until_settled()` |
 | `client.alert_hooks` | `create()`, `list()`, `get()`, `update()`, `rotate()`, `enable()`, `disable()`, `delete()`, `deliveries()` — TradingView alerts to MT5 |
+| `client.events` | `list()`, `iter()`, `get()` — the event log, for catching up after downtime |
+| `client.webhooks` | `deliveries()`, `delivery()`, `replay()` |
 | `client.usage` | `get()`, `daily()` |
 | `client.plans` | `list()` |
 
