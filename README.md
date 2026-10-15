@@ -267,6 +267,7 @@ asyncio.run(main())
 | `client.alert_hooks` | `create()`, `list()`, `get()`, `update()`, `rotate()`, `enable()`, `disable()`, `delete()`, `deliveries()` — TradingView alerts to MT5 |
 | `client.events` | `list()`, `iter()`, `get()` — the event log, for catching up after downtime |
 | `client.webhooks` | `deliveries()`, `delivery()`, `replay()` |
+| `client.admin.keys` | `list()`, `create()`, `get()`, `update()`, `revoke()` — needs an admin key |
 | `client.usage` | `get()`, `daily()` |
 | `client.plans` | `list()` |
 
@@ -277,7 +278,28 @@ Notes:
 - Times accept `datetime` (sent as RFC 3339 UTC) or strings. Numbers accept `str`, `Decimal`, `int` or `float` (rounded to 8 places) and are always sent as strings.
 - `Fxapis(base_url=..., timeout=..., max_retries=..., http_client=httpx.Client(...))` for proxies, custom transports or tests.
 
-Everything in the API — including API keys, members and billing — is in the [API reference](https://docs.fxapis.com/api-reference), with samples in 13 languages.
+### Admin keys: manage API keys from code
+
+From 0.1.6, `client.admin.keys` lists, creates, changes and revokes your workspace's ordinary API keys. It needs an **admin key** (`fx_admin_…`), which the workspace owner makes in the console under **API keys → Admin keys**, optionally limited to IP addresses and given an expiry. An admin key cannot trade or read account data itself, but the keys it creates can.
+
+```python
+from fxapis import Fxapis
+
+admin = Fxapis(api_key=FXAPIS_ADMIN_KEY)
+
+created = admin.admin.keys.create(
+    name="trader-42",
+    scopes=["trading:execute", "trading:read"],
+    limits={"maxVolume": "1.00", "accountIds": [account_id]},
+)
+# created["key"] is shown once: hand it to the trader's integration now.
+
+admin.admin.keys.revoke(created["id"])  # when the evaluation ends
+```
+
+An ordinary key used on these methods raises `PermissionDeniedError` (`ADMIN_KEY_REQUIRED`). Managing your team (members and invitations) is done in the console only.
+
+Everything else in the API — including billing reads — is in the [API reference](https://docs.fxapis.com/api-reference), with samples in 13 languages.
 
 ## Good to know
 
