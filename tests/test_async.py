@@ -77,12 +77,32 @@ async def test_connection_error_retried_for_prepare(api: Recorder, make_async: C
     assert results[0]["result"] == "starting"
 
 
+async def test_async_catch_up(api: Recorder, make_async: Callable[[], AsyncFxapis]) -> None:
+    api.responses.append((200, {"data": [{"id": "e1"}], "page": {"hasMore": False, "nextCursor": None}}))
+    async with make_async() as client:
+        ids = [e["id"] async for e in client.events.iter(after="e0")]
+    assert ids == ["e1"]
+
+
 def _public_methods(cls: type) -> dict[str, inspect.Signature]:
     return {name: inspect.signature(fn) for name, fn in vars(cls).items() if callable(fn) and not name.startswith("_")}
 
 
 @pytest.mark.parametrize(
-    "name", ["Workspace_", "Accounts", "Orders", "Positions", "Deals", "Calculate", "Waves", "Usage_", "Plans"]
+    "name",
+    [
+        "Workspace_",
+        "Accounts",
+        "Orders",
+        "Positions",
+        "Deals",
+        "Calculate",
+        "Waves",
+        "Usage_",
+        "Plans",
+        "Events",
+        "Webhooks",
+    ],
 )
 def test_sync_and_async_resources_match(name: str) -> None:
     sync_methods = _public_methods(getattr(_client, name))

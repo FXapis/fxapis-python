@@ -361,6 +361,62 @@ def op_alert_deliveries(hook_id: str) -> Request:
     return Request("GET", f"/v1/alert-hooks/{seg(hook_id)}/deliveries", safe=True)
 
 
+def op_list_events(
+    *,
+    after: str | None,
+    event_type: str | list[str] | None,
+    account_id: str | None,
+    delivery_status: str | None,
+    since: Timestamp | None,
+    until: Timestamp | None,
+    limit: int | None,
+    cursor: str | None,
+) -> Request:
+    params = query(
+        {
+            "after": after,
+            "type": event_type,
+            "account_id": account_id,
+            "delivery_status": delivery_status,
+            "since": since,
+            "until": until,
+            "limit": limit,
+            "cursor": cursor,
+        }
+    )
+    return Request("GET", "/v1/events", params=params, returns="page", safe=True)
+
+
+def op_get_event(event_id: str) -> Request:
+    return Request("GET", f"/v1/events/{seg(event_id)}", safe=True)
+
+
+def op_webhook_deliveries(
+    endpoint_id: str, *, status: str | None, event_type: str | None, limit: int | None, cursor: str | None
+) -> Request:
+    params = query({"status": status, "eventType": event_type, "limit": limit, "cursor": cursor})
+    return Request("GET", f"/v1/webhooks/{seg(endpoint_id)}/deliveries", params=params, returns="page", safe=True)
+
+
+def op_webhook_delivery(endpoint_id: str, delivery_id: str) -> Request:
+    return Request("GET", f"/v1/webhooks/{seg(endpoint_id)}/deliveries/{seg(delivery_id)}", safe=True)
+
+
+def op_replay_webhook(
+    endpoint_id: str, *, since: Timestamp, until: Timestamp | None, types: list[str] | None, include: str | None
+) -> Request:
+    body = compact(
+        {
+            "since": fmt_time(since),
+            "until": fmt_time(until) if until is not None else None,
+            "types": types,
+            "include": include,
+        }
+    )
+    # Failed-only replay is safe to repeat; "all" is not, so only the default is marked safe for a transport retry.
+    return Request("POST", f"/v1/webhooks/{seg(endpoint_id)}/replay", json=body, safe=include != "all")
+
+
 def op_set_mode(account_id: str, mode: str) -> Request:
     return Request("POST", f"/v1/accounts/{seg(account_id)}/mode", json={"mode": mode})
 

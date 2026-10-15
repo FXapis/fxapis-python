@@ -6,6 +6,12 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.5] — 2026-10-14
+
+- events.list() / events.iter(after=...) / events.get(): catch up on webhook events after downtime
+- webhooks.replay(): re-send what an endpoint missed (failed only by default)
+- webhooks.deliveries() and webhooks.delivery(): paged delivery logs with the request and response
+
 ## [0.1.4] — 2026-10-14
 
 - waves.create() accepts instrument= instead of symbol=, for multi-account orders across accounts at different brokers (exactly one of the two)

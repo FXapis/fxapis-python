@@ -9,7 +9,7 @@ import asyncio
 import builtins
 import time
 from collections.abc import AsyncIterator
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import httpx
 
@@ -32,6 +32,7 @@ from .types import (
     Deal,
     DeleteResult,
     DisconnectResult,
+    Event,
     Instrument,
     InstrumentMapping,
     MarketHours,
@@ -44,12 +45,15 @@ from .types import (
     Position,
     PrepareResult,
     ReconcileResult,
+    ReplayResult,
     Side,
     SymbolsSynced,
     Usage,
     UsageDay,
     WarmResult,
     Wave,
+    WebhookDelivery,
+    WebhookDeliveryDetail,
     Workspace,
 )
 
@@ -101,6 +105,8 @@ class AsyncFxapis:
         self.multi_account_orders = self.waves
         self.usage = Usage_(self)
         self.plans = Plans(self)
+        self.events = Events(self)
+        self.webhooks = Webhooks(self)
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -696,6 +702,118 @@ class AlertHooks(_Resource):
     async def deliveries(self, hook_id: str) -> builtins.list[AlertDelivery]:
         """The most recent alerts this hook received, and what became of each."""
         return cast("builtins.list[AlertDelivery]", await self._client._send(b.op_alert_deliveries(hook_id)))
+
+
+class Events(_Resource):
+    """The event log: everything that happened in your workspace, as webhooks deliver it, kept 7-90 days by plan."""
+
+    async def list(
+        self,
+        *,
+        after: str | None = None,
+        event_type: str | builtins.list[str] | None = None,
+        account_id: str | None = None,
+        delivery_status: Literal["failed"] | None = None,
+        since: Timestamp | None = None,
+        until: Timestamp | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Page[Event]:
+        """One page. With ``after`` (an event id): the events after it, oldest first.
+
+        Without it: newest first, paged by ``cursor``.
+        """
+        request = b.op_list_events(
+            after=after,
+            event_type=event_type,
+            account_id=account_id,
+            delivery_status=delivery_status,
+            since=since,
+            until=until,
+            limit=limit,
+            cursor=cursor,
+        )
+        return cast("Page[Event]", await self._client._send(request))
+
+    async def iter(
+        self,
+        *,
+        after: str | None = None,
+        event_type: str | builtins.list[str] | None = None,
+        account_id: str | None = None,
+        delivery_status: Literal["failed"] | None = None,
+        since: Timestamp | None = None,
+        until: Timestamp | None = None,
+        page_size: int = 200,
+    ) -> AsyncIterator[Event]:
+        """Every matching event.
+
+        With ``after``: oldest first. To catch up, pass the id of the last event of a list page you
+        processed; never a webhook's id, since webhooks can arrive out of order. Without: newest first.
+        """
+        last = after
+        cursor: str | None = None
+        while True:
+            page = await self.list(
+                after=last,
+                cursor=cursor,
+                event_type=event_type,
+                account_id=account_id,
+                delivery_status=delivery_status,
+                since=since,
+                until=until,
+                limit=page_size,
+            )
+            for event in page.data:
+                yield event
+            if not page.has_more or not page.data:
+                return
+            if after is not None:
+                last = page.data[-1]["id"]
+            elif page.next_cursor:
+                cursor = page.next_cursor
+            else:
+                return
+
+    async def get(self, event_id: str) -> Event:
+        return cast(Event, await self._client._send(b.op_get_event(event_id)))
+
+
+class Webhooks(_Resource):
+    """Webhook endpoints' delivery logs and replay. (To check a delivery's signature, use :mod:`fxapis.webhooks`.)"""
+
+    async def deliveries(
+        self,
+        endpoint_id: str,
+        *,
+        status: Literal["succeeded", "failed"] | None = None,
+        event_type: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Page[WebhookDelivery]:
+        """One page of delivery attempts to an endpoint, newest first. Kept 30 days."""
+        request = b.op_webhook_deliveries(endpoint_id, status=status, event_type=event_type, limit=limit, cursor=cursor)
+        return cast("Page[WebhookDelivery]", await self._client._send(request))
+
+    async def delivery(self, endpoint_id: str, delivery_id: str) -> WebhookDeliveryDetail:
+        """One attempt in full: the request as sent, and the answer."""
+        return cast(WebhookDeliveryDetail, await self._client._send(b.op_webhook_delivery(endpoint_id, delivery_id)))
+
+    async def replay(
+        self,
+        endpoint_id: str,
+        *,
+        since: Timestamp,
+        until: Timestamp | None = None,
+        types: builtins.list[str] | None = None,
+        include: Literal["failed", "all"] | None = None,
+    ) -> ReplayResult:
+        """Re-sends a window's events to an endpoint: only what it missed, unless ``include="all"``.
+
+        With ``include="all"``, dedupe on ``id`` first.
+        """
+        request = b.op_replay_webhook(endpoint_id, since=since, until=until, types=types, include=include)
+        return cast(ReplayResult, await self._client._send(request))
 
 
 class Waves(_Resource):

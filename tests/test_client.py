@@ -677,3 +677,63 @@ def test_waves_create_needs_exactly_one_of_symbol_or_instrument(kwargs: dict[str
             comment=None, label=None, client_wave_id=None, barrier_policy=None, execute_at=None,
             expires_at=None, idempotency_key=None, **kwargs,
         )
+
+
+EVENT = {"id": "e1", "type": "order.filled", "createdAt": "2026-10-14T12:00:00.000Z", "data": {"id": "o1"}}
+
+
+def test_events_catch_up_after_the_last_id(client: Fxapis, api: Recorder) -> None:
+    api.responses += [
+        (200, {"data": [EVENT, {**EVENT, "id": "e2"}], "page": {"hasMore": True, "nextCursor": None}}),
+        (200, {"data": [{**EVENT, "id": "e3"}], "page": {"hasMore": False, "nextCursor": None}}),
+    ]
+    ids = [e["id"] for e in client.events.iter(after="e0", event_type=["order.filled", "position.opened"], page_size=2)]
+    assert ids == ["e1", "e2", "e3"]
+    first, second = api.requests[0].url.params, api.requests[1].url.params
+    assert first["after"] == "e0"
+    assert first.get_list("type") == ["order.filled", "position.opened"]
+    assert first["limit"] == "2"
+    assert second["after"] == "e2" and "cursor" not in second
+
+
+def test_events_list_newest_first_with_filters(client: Fxapis, api: Recorder) -> None:
+    api.responses += [
+        (200, {"data": [EVENT], "page": {"hasMore": True, "nextCursor": "c1"}}),
+        (200, {"data": [{**EVENT, "id": "e2"}], "page": {"hasMore": False, "nextCursor": None}}),
+    ]
+    since = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    ids = [e["id"] for e in client.events.iter(since=since, account_id="a1", delivery_status="failed", page_size=1)]
+    assert ids == ["e1", "e2"]
+    params = api.requests[0].url.params
+    assert params["since"] == "2026-10-01T00:00:00Z"
+    assert params["account_id"] == "a1"
+    assert params["delivery_status"] == "failed"
+    assert api.requests[1].url.params["cursor"] == "c1"
+
+
+def test_events_get(client: Fxapis, api: Recorder) -> None:
+    api.responses.append((200, {"data": EVENT}))
+    assert client.events.get("e1")["type"] == "order.filled"
+    assert str(api.requests[0].url).endswith("/v1/events/e1")
+
+
+def test_webhook_deliveries_and_one_attempt(client: Fxapis, api: Recorder) -> None:
+    api.responses += [
+        (200, {"data": [{"id": "d1", "state": "failed"}], "page": {"hasMore": False, "nextCursor": None}}),
+        (200, {"data": {"id": "d1", "request": {"url": "https://x", "headers": {}, "body": "{}"}, "response": None}}),
+    ]
+    page = client.webhooks.deliveries("w1", status="failed", event_type="order.filled", limit=10)
+    assert [d["id"] for d in page] == ["d1"]
+    assert api.requests[0].url.params["eventType"] == "order.filled"
+    assert client.webhooks.delivery("w1", "d1")["response"] is None
+    assert str(api.requests[1].url).endswith("/v1/webhooks/w1/deliveries/d1")
+
+
+def test_webhook_replay_failed_by_default_and_all_on_request(client: Fxapis, api: Recorder) -> None:
+    done = {"queued": 3, "include": "failed", "since": "s", "until": "u", "nextSince": None}
+    api.responses += [(202, {"data": done}), (202, {"data": {**done, "include": "all"}})]
+    replayed = client.webhooks.replay("w1", since=datetime(2026, 10, 13, tzinfo=timezone.utc), types=["order.filled"])
+    assert replayed["queued"] == 3
+    assert api.body(0) == {"since": "2026-10-13T00:00:00Z", "types": ["order.filled"]}
+    client.webhooks.replay("w1", since="2026-10-13T00:00:00Z", include="all")
+    assert api.body(1) == {"since": "2026-10-13T00:00:00Z", "include": "all"}

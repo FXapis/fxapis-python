@@ -11,7 +11,7 @@ never puts a float in a request body, and neither does this library.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Generic, Literal, TypedDict, TypeVar
+from typing import Any, Generic, Literal, TypedDict, TypeVar
 
 __all__ = [
     "AlertHook",
@@ -44,6 +44,11 @@ __all__ = [
     "UsageDay",
     "Plan",
     "Page",
+    "Event",
+    "WebhookDelivery",
+    "WebhookDeliveryDetail",
+    "ReplayResult",
+    "DeliveryState",
 ]
 
 AccountMode = Literal["always_on", "warm_on_demand", "cold"]
@@ -514,3 +519,61 @@ class AlertDelivery(TypedDict, total=False):
     payload: str | None
     orderIds: list[str]
     waveId: str | None
+
+
+DeliveryState = Literal["succeeded", "failed", "sending"]
+
+
+class Event(TypedDict, total=False):
+    """One thing that happened, exactly as a webhook delivery carries it."""
+
+    id: str
+    type: str
+    createdAt: str
+    data: dict[str, Any]
+
+
+class WebhookDelivery(TypedDict, total=False):
+    """One attempt to deliver an event to a webhook endpoint. Kept 30 days."""
+
+    id: str
+    eventId: str
+    eventType: str
+    attempt: int
+    state: DeliveryState
+    succeeded: bool
+    statusCode: int | None
+    durationMs: int | None
+    error: str | None
+    eventAvailable: bool
+    """False once the event has aged out of the event history: it can no longer be redelivered."""
+    createdAt: str
+
+
+class WebhookRequest(TypedDict, total=False):
+    url: str | None
+    headers: dict[str, str]
+    body: str | None
+
+
+class WebhookResponse(TypedDict, total=False):
+    statusCode: int
+    headers: dict[str, str]
+    body: str
+
+
+class WebhookDeliveryDetail(WebhookDelivery, total=False):
+    """An attempt in full: the request as sent, and the answer (first 4 KB), or ``None`` when none came."""
+
+    request: WebhookRequest
+    response: WebhookResponse | None
+
+
+class ReplayResult(TypedDict, total=False):
+    """What a replay queued. ``nextSince`` is set when the cap was reached: replay again from it."""
+
+    queued: int
+    include: Literal["failed", "all"]
+    since: str
+    until: str
+    nextSince: str | None
