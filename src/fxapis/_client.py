@@ -20,6 +20,7 @@ from .types import (
     AlertDelivery,
     AlertHook,
     AlertHookDefaults,
+    ApiKey,
     BarrierPolicy,
     BrokerServer,
     BrokerSymbol,
@@ -31,6 +32,8 @@ from .types import (
     Event,
     Instrument,
     InstrumentMapping,
+    KeyLimits,
+    KeyScope,
     MarketHours,
     ModeResult,
     Order,
@@ -103,6 +106,8 @@ class Fxapis:
         self.plans = Plans(self)
         self.events = Events(self)
         self.webhooks = Webhooks(self)
+        #: Needs an admin key (``fx_admin_…``): manage this workspace's ordinary API keys.
+        self.admin = Admin(self)
 
     # -- lifecycle -------------------------------------------------------------
 
@@ -881,3 +886,60 @@ class Plans(_Resource):
     def list(self) -> builtins.list[Plan]:
         """The plans on offer. Prices are in minor units: ``9900`` is $99.00."""
         return cast("builtins.list[Plan]", self._client._send(b.op_plans()))
+
+
+class AdminKeys(_Resource):
+    """This workspace's ordinary API keys, managed with an admin key.
+
+    ``Fxapis(api_key="fx_admin_…").admin.keys`` -- an ordinary key is refused
+    with ``ADMIN_KEY_REQUIRED`` (a :class:`PermissionDeniedError`).
+    """
+
+    def list(self) -> builtins.list[ApiKey]:
+        """Every key, newest first, revoked ones included. Never a key's secret."""
+        return cast("builtins.list[ApiKey]", self._client._send(b.op_list_keys()))
+
+    def create(
+        self,
+        *,
+        name: str,
+        scopes: builtins.list[KeyScope],
+        environment: Literal["live", "test"] | None = None,
+        expires_at: Timestamp | None = None,
+        limits: KeyLimits | None = None,
+    ) -> ApiKey:
+        """Creates a key. The returned ``key`` is shown **only now** -- store it."""
+        request = b.op_create_key(
+            name=name,
+            scopes=list(scopes),
+            environment=environment,
+            expires_at=expires_at,
+            limits=cast("dict[str, Any] | None", limits),
+        )
+        return cast(ApiKey, self._client._send(request))
+
+    def get(self, key_id: str) -> ApiKey:
+        return cast(ApiKey, self._client._send(b.op_get_key(key_id)))
+
+    def update(
+        self,
+        key_id: str,
+        *,
+        name: str | None = None,
+        scopes: builtins.list[KeyScope] | None = None,
+        limits: KeyLimits | Any | None = UNSET,
+    ) -> ApiKey:
+        """Renames, re-scopes or re-limits a key. ``limits=None`` removes its limits; leaving it out keeps them."""
+        request = b.op_update_key(key_id, name=name, scopes=list(scopes) if scopes is not None else None, limits=limits)
+        return cast(ApiKey, self._client._send(request))
+
+    def revoke(self, key_id: str) -> ApiKey:
+        """Refused from its next request. Safe to repeat. Cannot be undone."""
+        return cast(ApiKey, self._client._send(b.op_revoke_key(key_id)))
+
+
+class Admin:
+    """What an admin key can do: manage this workspace's ordinary API keys (``keys``). Nothing else."""
+
+    def __init__(self, client: Fxapis) -> None:
+        self.keys = AdminKeys(client)

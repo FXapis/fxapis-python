@@ -102,6 +102,8 @@ def _public_methods(cls: type) -> dict[str, inspect.Signature]:
         "Plans",
         "Events",
         "Webhooks",
+        "Admin",
+        "AdminKeys",
     ],
 )
 def test_sync_and_async_resources_match(name: str) -> None:
@@ -120,3 +122,14 @@ def test_clients_expose_the_same_resources() -> None:
     names = {n for n in vars(sync_client) if not n.startswith("_")}
     assert names == {n for n in vars(async_client) if not n.startswith("_")}
     assert async_client.multi_account_orders is async_client.waves
+
+
+async def test_admin_keys(api: Recorder) -> None:
+    api.responses += [(200, {"data": []}), (200, {"data": {"id": "k1", "revokedAt": "2026-10-15T12:00:00Z"}})]
+    http = httpx.AsyncClient(transport=httpx.MockTransport(api.handler))
+    async with AsyncFxapis("fx_admin_0123abcd_secret", http_client=http) as client:
+        assert await client.admin.keys.list() == []
+        revoked = await client.admin.keys.revoke("k1")
+    await http.aclose()
+    assert revoked["revokedAt"] is not None
+    assert [r.url.path for r in api.requests] == ["/v1/api-keys", "/v1/api-keys/k1/revoke"]

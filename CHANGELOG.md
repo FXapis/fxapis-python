@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.6] — 2026-10-15
+
+- client.admin.keys (list, create, get, update, revoke), sync and async: manage your workspace's API keys with an admin key (fx_admin_…) made by the workspace owner in the console.
+- An ordinary key used on an admin method raises PermissionDeniedError (ADMIN_KEY_REQUIRED).
+
 ## [0.1.5] — 2026-10-14
 
 - events.list() / events.iter(after=...) / events.get(): catch up on webhook events after downtime

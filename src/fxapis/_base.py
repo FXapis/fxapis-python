@@ -725,3 +725,47 @@ def op_usage_daily() -> Request:
 
 def op_plans() -> Request:
     return Request("GET", "/v1/plans", safe=True)
+
+
+# -- API keys, with an admin key -------------------------------------------------
+
+
+def op_list_keys() -> Request:
+    return Request("GET", "/v1/api-keys", safe=True)
+
+
+def op_create_key(
+    *,
+    name: str,
+    scopes: list[str],
+    environment: str | None,
+    expires_at: Timestamp | None,
+    limits: dict[str, Any] | None,
+) -> Request:
+    body = compact(
+        {
+            "name": name,
+            "scopes": list(scopes),
+            "environment": environment,
+            "expiresAt": fmt_time(expires_at) if expires_at is not None else None,
+            "limits": limits,
+        }
+    )
+    # Not safe to resend: a second create is a second key.
+    return Request("POST", "/v1/api-keys", json=body)
+
+
+def op_get_key(key_id: str) -> Request:
+    return Request("GET", f"/v1/api-keys/{seg(key_id)}", safe=True)
+
+
+def op_update_key(key_id: str, *, name: str | None, scopes: list[str] | None, limits: Any) -> Request:
+    # ``limits=None`` is sent as null (removes them); ``UNSET`` leaves them out (keeps them).
+    named = compact({"name": name, "scopes": list(scopes) if scopes is not None else None})
+    body = {**named, **nullable({"limits": limits})}
+    return Request("PATCH", f"/v1/api-keys/{seg(key_id)}", json=body)
+
+
+def op_revoke_key(key_id: str) -> Request:
+    # Revoking a revoked key answers with it unchanged, so a resend is safe.
+    return Request("POST", f"/v1/api-keys/{seg(key_id)}/revoke", safe=True)

@@ -14,6 +14,10 @@ from dataclasses import dataclass, field
 from typing import Any, Generic, Literal, TypedDict, TypeVar
 
 __all__ = [
+    "ApiKey",
+    "KeyLimits",
+    "KeyMaker",
+    "KeyScope",
     "AlertHook",
     "AlertHookDefaults",
     "AlertDelivery",
@@ -334,6 +338,54 @@ class Workspace(TypedDict, total=False):
     planName: str
     planAssigned: bool
     tradingDisabled: bool
+
+
+KeyScope = Literal[
+    "accounts:read",
+    "accounts:write",
+    "trading:read",
+    "trading:reduce",
+    "trading:execute",
+    "history:read",
+    "webhooks:write",
+]
+"""The scopes an ordinary key may hold.
+
+``admin``, ``keys:manage``, ``members:manage`` and ``billing:manage`` never can.
+"""
+
+
+class KeyLimits(TypedDict, total=False):
+    """What a key may open, on top of its scopes. A field left out (or ``None``) is no limit."""
+
+    maxVolume: str | None
+    symbols: list[str] | None
+    accountIds: list[str] | None
+    maxOpeningOrdersPerDay: int | None
+
+
+class KeyMaker(TypedDict):
+    id: str
+    name: str
+
+
+class ApiKey(TypedDict, total=False):
+    """An ordinary API key. ``key`` is present only in the answer to ``admin.keys.create()`` -- store it then."""
+
+    id: str
+    name: str
+    publicId: str
+    hint: str
+    environment: Literal["live", "test"]
+    scopes: list[str]
+    lastUsedAt: str | None
+    expiresAt: str | None
+    revokedAt: str | None
+    createdAt: str
+    limits: KeyLimits | None
+    createdBy: KeyMaker | None
+    createdByAdminKey: KeyMaker | None
+    key: str
 
 
 class _Entitlements(TypedDict, total=False):

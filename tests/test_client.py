@@ -737,3 +737,67 @@ def test_webhook_replay_failed_by_default_and_all_on_request(client: Fxapis, api
     assert api.body(0) == {"since": "2026-10-13T00:00:00Z", "types": ["order.filled"]}
     client.webhooks.replay("w1", since="2026-10-13T00:00:00Z", include="all")
     assert api.body(1) == {"since": "2026-10-13T00:00:00Z", "include": "all"}
+
+
+# -- admin keys -------------------------------------------------------------------
+
+
+def test_admin_keys_manage_ordinary_keys(api: Recorder) -> None:
+    key = {"id": "k1", "name": "ci", "scopes": ["accounts:read"], "environment": "live", "hint": "fx_live_0a1b2c3d_…"}
+    api.responses.extend(
+        [
+            (200, {"data": [key]}),
+            (201, {"data": {**key, "key": "fx_live_0a1b2c3d_secret"}}),
+            (200, {"data": key}),
+            (200, {"data": {**key, "name": "ci 2"}}),
+            (200, {"data": {**key, "limits": None}}),
+            (200, {"data": {**key, "revokedAt": "2026-10-15T12:00:00Z"}}),
+        ]
+    )
+    http = httpx.Client(transport=httpx.MockTransport(api.handler))
+    with Fxapis("fx_admin_0123abcd_secret", http_client=http) as client:
+        assert client.admin.keys.list()[0]["id"] == "k1"
+        created = client.admin.keys.create(
+            name="ci",
+            scopes=["accounts:read"],
+            environment="test",
+            expires_at=datetime(2026, 12, 31, tzinfo=timezone.utc),
+            limits={"maxVolume": "1.00"},
+        )
+        assert created["key"].startswith("fx_live_")
+        client.admin.keys.get("k/1")
+        client.admin.keys.update("k1", name="ci 2")
+        client.admin.keys.update("k1", limits=None)
+        assert client.admin.keys.revoke("k1")["revokedAt"] is not None
+    http.close()
+
+    sent = [(r.method, r.url.raw_path) for r in api.requests]
+    assert sent == [
+        ("GET", b"/v1/api-keys"),
+        ("POST", b"/v1/api-keys"),
+        ("GET", b"/v1/api-keys/k%2F1"),
+        ("PATCH", b"/v1/api-keys/k1"),
+        ("PATCH", b"/v1/api-keys/k1"),
+        ("POST", b"/v1/api-keys/k1/revoke"),
+    ]
+    assert api.body(1) == {
+        "name": "ci",
+        "scopes": ["accounts:read"],
+        "environment": "test",
+        "expiresAt": "2026-12-31T00:00:00Z",
+        "limits": {"maxVolume": "1.00"},
+    }
+    # Leaving limits out keeps them; None removes them.
+    assert api.body(3) == {"name": "ci 2"}
+    assert api.body(4) == {"limits": None}
+    assert all(r.headers["authorization"] == "Bearer fx_admin_0123abcd_secret" for r in api.requests)
+
+
+def test_admin_keys_create_is_not_retried_after_a_lost_answer(api: Recorder) -> None:
+    # A second create would make a second key: only reads and revoke are safe to resend.
+    api.responses.append(httpx.ConnectError("reset"))
+    http = httpx.Client(transport=httpx.MockTransport(api.handler))
+    with Fxapis("fx_admin_0123abcd_secret", http_client=http) as client, pytest.raises(APIConnectionError):
+        client.admin.keys.create(name="ci", scopes=["accounts:read"])
+    http.close()
+    assert len(api.requests) == 1
