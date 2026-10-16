@@ -133,3 +133,12 @@ async def test_admin_keys(api: Recorder) -> None:
     await http.aclose()
     assert revoked["revokedAt"] is not None
     assert [r.url.path for r in api.requests] == ["/v1/api-keys", "/v1/api-keys/k1/revoke"]
+
+
+async def test_figures_and_quotes(api: Recorder, make_async: Callable[[], AsyncFxapis]) -> None:
+    api.responses += [(200, {"data": {"source": "live"}}), (200, {"data": []})]
+    async with make_async() as client:
+        assert (await client.accounts.figures(ACCOUNT, fresh=True))["source"] == "live"
+        assert await client.quotes.get(ACCOUNT, instruments=["XAUUSD"]) == []
+    assert api.requests[0].url.params["fresh"] == "true"
+    assert api.requests[1].url.params["instruments"] == "XAUUSD"

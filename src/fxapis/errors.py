@@ -41,6 +41,7 @@ __all__ = [
     "AccountExistsError",
     "AccountExecutingError",
     "NeedsOperatorError",
+    "CapabilityUnavailableError",
     "AccountNeedsAttentionError",
     "WaitTimeoutError",
     "error_from_response",
@@ -293,6 +294,13 @@ class NeedsOperatorError(ConflictError):
     """
 
 
+class CapabilityUnavailableError(APIStatusError):
+    """501 ``CAPABILITY_UNAVAILABLE`` -- the account's terminal predates this feature.
+
+    It gains it at its next update. Not retried: asking again now gets the same answer.
+    """
+
+
 class AccountNeedsAttentionError(FxapisError):
     """Raised by ``wait_until_ready`` when the account reaches a state only a person can fix.
 
@@ -332,6 +340,7 @@ _BY_CODE: dict[str, type[APIStatusError]] = {
     "ACCOUNT_HAS_POSITIONS": AccountHasPositionsError,
     "ACCOUNT_IN_WAVE": AccountInWaveError,
     "NEEDS_OPERATOR": NeedsOperatorError,
+    "CAPABILITY_UNAVAILABLE": CapabilityUnavailableError,
 }
 
 _BY_STATUS: dict[int, type[APIStatusError]] = {

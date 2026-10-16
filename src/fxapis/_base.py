@@ -269,6 +269,30 @@ def op_account_status(account_id: str) -> Request:
     return Request("GET", f"/v1/accounts/{seg(account_id)}/status", safe=True)
 
 
+def op_account_figures(account_id: str, fresh: bool) -> Request:
+    params = {"fresh": "true"} if fresh else {}
+    return Request("GET", f"/v1/accounts/{seg(account_id)}/figures", params=params, safe=True)
+
+
+#: The API's own limit on symbols and instruments per quotes request.
+MAX_QUOTES: Final = 20
+
+
+def op_quotes(account_id: str, symbols: list[str] | None, instruments: list[str] | None) -> Request:
+    wanted = list(dict.fromkeys(symbols or []))
+    named = list(dict.fromkeys(instruments or []))
+    if not wanted and not named:
+        raise ValueError("quotes needs at least one symbol or instrument")
+    if len(wanted) + len(named) > MAX_QUOTES:
+        raise ValueError(f"at most {MAX_QUOTES} symbols and instruments together")
+    params: dict[str, str] = {}
+    if wanted:
+        params["symbols"] = ",".join(wanted)
+    if named:
+        params["instruments"] = ",".join(named)
+    return Request("GET", f"/v1/accounts/{seg(account_id)}/quotes", params=params, safe=True)
+
+
 def op_warm(account_id: str) -> Request:
     # Safe to repeat: warming an online account answers alreadyRunning: true.
     return Request("POST", f"/v1/accounts/{seg(account_id)}/warm", safe=True)

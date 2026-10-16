@@ -29,6 +29,8 @@ __all__ = [
     "WaveState",
     "BarrierPolicy",
     "Account",
+    "AccountFigures",
+    "Quote",
     "AccountStatus",
     "WarmResult",
     "PrepareResult",
@@ -106,12 +108,58 @@ class Account(TypedDict, total=False):
     stateChangedAt: str
     currency: str | None
     leverage: int | None
-    marginMode: str | None
+    marginMode: Literal["netting", "hedging"] | None
     tradeAllowed: bool | None
     brokerName: str | None
     tradingDisabled: bool
     createdAt: str
+    balance: str | None
+    equity: str | None
+    margin: str | None
+    freeMargin: str | None
+    marginLevel: str | None
+    credit: str | None
+    profit: str | None
+    figuresObservedAt: str | None
     problem: AccountProblem | None
+
+
+class AccountFigures(TypedDict, total=False):
+    """Money figures as decimal strings in the account's currency. ``marginLevel`` is None while no margin is used."""
+
+    accountId: str
+    balance: str | None
+    equity: str | None
+    margin: str | None
+    freeMargin: str | None
+    marginLevel: str | None
+    credit: str | None
+    profit: str | None
+    currency: str | None
+    leverage: int | None
+    marginMode: Literal["netting", "hedging"] | None
+    observedAt: str | None
+    ageMs: int | None
+    source: Literal["live", "snapshot"]
+
+
+class Quote(TypedDict, total=False):
+    """A price from the account's own broker. ``stale`` only while the market is open and the tick is over 60 s old."""
+
+    symbol: str
+    instrument: str | None
+    status: Literal["ok", "no_price", "unknown_symbol"]
+    bid: str | None
+    ask: str | None
+    spread: int | None
+    digits: int | None
+    brokerTime: str | None
+    time: str | None
+    observedAt: str
+    ageMs: int | None
+    stale: bool
+    marketOpen: bool | None
+    tradeMode: Literal["full", "longOnly", "shortOnly", "closeOnly", "disabled"] | None
 
 
 class ProblemAction(TypedDict, total=False):
@@ -228,6 +276,8 @@ class Order(TypedDict, total=False):
     side: Side
     type: Literal["market", "limit", "stop", "stop_limit"]
     intent: Literal["open", "close", "modify", "cancel"]
+    #: On a close or modify, the position acted on. On an opening order, the position it opened:
+    #: usually set when it fills, else linked within a few minutes (pending orders, older terminals).
     brokerPositionId: str | None
     volume: str | None
     stopLoss: str | None

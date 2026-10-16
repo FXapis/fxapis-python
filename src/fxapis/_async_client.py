@@ -19,6 +19,7 @@ from .errors import AccountNeedsAttentionError, APIConnectionError, APITimeoutEr
 from .types import (
     Account,
     AccountEvent,
+    AccountFigures,
     AccountMode,
     AccountStatus,
     AlertDelivery,
@@ -47,6 +48,7 @@ from .types import (
     Plan,
     Position,
     PrepareResult,
+    Quote,
     ReconcileResult,
     ReplayResult,
     Side,
@@ -102,6 +104,7 @@ class AsyncFxapis:
         self.positions = Positions(self)
         self.deals = Deals(self)
         self.calculate = Calculate(self)
+        self.quotes = Quotes(self)
         self.waves = Waves(self)
         self.alert_hooks = AlertHooks(self)
         #: The same as ``waves``: one trade placed on many accounts at once.
@@ -207,6 +210,16 @@ class Accounts(_Resource):
     async def status(self, account_id: str) -> AccountStatus:
         """Lifecycle state. Cheap enough to poll every second or two."""
         return cast(AccountStatus, await self._client._send(b.op_account_status(account_id)))
+
+    async def figures(self, account_id: str, *, fresh: bool = False) -> AccountFigures:
+        """Balance, equity, margin, free margin, margin level, credit and open profit, as decimal strings.
+
+        The last read -- taken every 15 s while the account is online (every 60 s from a terminal
+        not yet updated) -- unless ``fresh=True``, which asks the account's terminal now: the
+        account must then be ``ready``, and a terminal not yet updated raises
+        :class:`~fxapis.CapabilityUnavailableError`.
+        """
+        return cast(AccountFigures, await self._client._send(b.op_account_figures(account_id, fresh)))
 
     async def warm(self, account_id: str) -> WarmResult:
         """Starts bringing the account online and returns at once (HTTP 202). Then ``wait_until_ready``."""
@@ -653,6 +666,25 @@ class Calculate(_Resource):
             account_id, kind="profit", symbol=symbol, side=side, volume=volume, price=price, close_price=close_price
         )
         return cast(CalculateResult, await self._client._send(request))
+
+
+class Quotes(_Resource):
+    """Live prices from an account's own broker. Polled; there is no stream."""
+
+    async def get(
+        self,
+        account_id: str,
+        *,
+        symbols: builtins.list[str] | None = None,
+        instruments: builtins.list[str] | None = None,
+    ) -> builtins.list[Quote]:
+        """Bid and ask for up to 20 broker symbols and instruments together.
+
+        A closed market answers its last price with ``marketOpen: False``. Judge freshness from
+        ``time`` and ``ageMs``. The account must be online. A terminal not yet updated for quotes
+        raises :class:`~fxapis.CapabilityUnavailableError`.
+        """
+        return cast("builtins.list[Quote]", await self._client._send(b.op_quotes(account_id, symbols, instruments)))
 
 
 class AlertHooks(_Resource):

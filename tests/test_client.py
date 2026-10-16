@@ -14,6 +14,7 @@ from fxapis import (
     AccountNotReadyError,
     APIConnectionError,
     AuthenticationError,
+    CapabilityUnavailableError,
     Fxapis,
     FxapisError,
     IdempotencyKeyReusedError,
@@ -27,7 +28,7 @@ from fxapis import (
     ServerError,
     WaitTimeoutError,
 )
-from fxapis._base import fmt_number, fmt_time
+from fxapis._base import fmt_number, fmt_time, op_quotes
 from fxapis.errors import error_from_response
 
 from .conftest import Recorder, error
@@ -673,9 +674,20 @@ def test_waves_create_needs_exactly_one_of_symbol_or_instrument(kwargs: dict[str
 
     with pytest.raises(ValueError, match="symbol or instrument"):
         b.op_create_wave(
-            account_ids=["a1"], side="buy", volume="0.01", weights=None, stop_loss=None, take_profit=None,
-            comment=None, label=None, client_wave_id=None, barrier_policy=None, execute_at=None,
-            expires_at=None, idempotency_key=None, **kwargs,
+            account_ids=["a1"],
+            side="buy",
+            volume="0.01",
+            weights=None,
+            stop_loss=None,
+            take_profit=None,
+            comment=None,
+            label=None,
+            client_wave_id=None,
+            barrier_policy=None,
+            execute_at=None,
+            expires_at=None,
+            idempotency_key=None,
+            **kwargs,
         )
 
 
@@ -800,4 +812,39 @@ def test_admin_keys_create_is_not_retried_after_a_lost_answer(api: Recorder) -> 
     with Fxapis("fx_admin_0123abcd_secret", http_client=http) as client, pytest.raises(APIConnectionError):
         client.admin.keys.create(name="ci", scopes=["accounts:read"])
     http.close()
+    assert len(api.requests) == 1
+
+
+def test_figures(client: Fxapis, api: Recorder) -> None:
+    api.responses.append((200, {"data": {"accountId": ACCOUNT, "equity": "10012.25000000", "source": "snapshot"}}))
+    api.responses.append((200, {"data": {"accountId": ACCOUNT, "equity": "10050.00000000", "source": "live"}}))
+    assert client.accounts.figures(ACCOUNT)["source"] == "snapshot"
+    assert client.accounts.figures(ACCOUNT, fresh=True)["equity"] == "10050.00000000"
+    assert api.requests[0].url.path == f"/v1/accounts/{ACCOUNT}/figures"
+    assert "fresh" not in api.requests[0].url.params
+    assert api.requests[1].url.params["fresh"] == "true"
+
+
+def test_quotes(client: Fxapis, api: Recorder) -> None:
+    api.responses.append(
+        (200, {"data": [{"symbol": "EURUSD", "bid": "1.08450000", "ask": "1.08462000", "stale": False}]})
+    )
+    quotes = client.quotes.get(ACCOUNT, symbols=["EURUSD", "EURUSD"], instruments=["XAUUSD"])
+    assert quotes[0]["ask"] == "1.08462000"
+    assert api.requests[0].url.path == f"/v1/accounts/{ACCOUNT}/quotes"
+    assert api.requests[0].url.params["symbols"] == "EURUSD"
+    assert api.requests[0].url.params["instruments"] == "XAUUSD"
+
+
+def test_quotes_need_something_and_at_most_twenty() -> None:
+    with pytest.raises(ValueError, match="at least one"):
+        op_quotes(ACCOUNT, None, None)
+    with pytest.raises(ValueError, match="at most 20"):
+        op_quotes(ACCOUNT, [f"S{i}" for i in range(21)], None)
+
+
+def test_capability_unavailable_is_its_own_error_and_is_not_retried(client: Fxapis, api: Recorder) -> None:
+    api.responses.append((501, {"error": {"code": "CAPABILITY_UNAVAILABLE", "message": "too old"}}))
+    with pytest.raises(CapabilityUnavailableError):
+        client.quotes.get(ACCOUNT, symbols=["EURUSD"])
     assert len(api.requests) == 1

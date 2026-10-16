@@ -28,6 +28,7 @@ from .errors import (
     APIStatusError,
     APITimeoutError,
     AuthenticationError,
+    CapabilityUnavailableError,
     ConflictError,
     FeatureNotInPlanError,
     FxapisError,
@@ -86,6 +87,7 @@ __all__ = [
     "AccountHasPositionsError",
     "AccountInWaveError",
     "NeedsOperatorError",
+    "CapabilityUnavailableError",
     "AccountNeedsAttentionError",
     "WaitTimeoutError",
 ]

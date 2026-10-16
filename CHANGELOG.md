@@ -6,6 +6,12 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.1.7] — 2026-10-15
+
+- client.accounts.figures(account_id, fresh=False): balance, equity, margin, free margin, margin level, credit and profit as decimal strings
+- client.quotes.get(account_id, symbols=..., instruments=...): live bid/ask from the account's own broker, with time, brokerTime, ageMs, marketOpen, stale and tradeMode
+- CapabilityUnavailableError for the 501 CAPABILITY_UNAVAILABLE answer
+
 ## [0.1.6] — 2026-10-15
 
 - client.admin.keys (list, create, get, update, revoke), sync and async: manage your workspace's API keys with an admin key (fx_admin_…) made by the workspace owner in the console.
