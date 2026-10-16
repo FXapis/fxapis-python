@@ -41,6 +41,8 @@ MT5 only (MT4 is not supported).
 - [Click-to-trade and signals](#click-to-trade-and-signals)
 - [Copy trading: one trade on many accounts](#copy-trading-one-trade-on-many-accounts)
 - [Webhooks](#webhooks)
+- [Balance, equity and margin](#balance-equity-and-margin)
+- [Live prices](#live-prices)
 - [Async](#async)
 - [Reference](#reference)
 - [Good to know](#good-to-know)
@@ -95,11 +97,16 @@ order = client.orders.market(
 )
 print(order["state"], order["filledPrice"])
 
-# 4. Read positions, then close one.
+# 4. Read positions, then close the one the order opened.
+# The order names it as brokerPositionId; until that is set, the position carries the order's own ticket.
+ticket = order.get("brokerPositionId") or order["brokerOrderId"]
 for position in client.positions.list(account["id"]):
     print(position["symbol"], position["side"], position["volume"], position["profit"], position["observedAt"])
-    client.positions.close(account["id"], position["brokerPositionId"])
+    if position["brokerPositionId"] == ticket:
+        client.positions.close(account["id"], position["brokerPositionId"])
 ```
+
+An opening order carries `brokerPositionId`, the ticket of the position it opened — set from the fill itself, or linked from the broker's positions and deals a few minutes later for a pending order that fills later. Close by it. While it is `None`, the new position carries the order's `brokerOrderId` as its ticket.
 
 The `with Fxapis() as client:` form closes the connection pool for you.
 
@@ -235,6 +242,30 @@ for event in client.events.iter(after=last_listed_id):  # oldest first
 
 Events appear in the list a few seconds after they happen, and are kept 7, 30 or 90 days depending on your plan. `client.events.list(delivery_status="failed")` shows events an endpoint did not receive, and `client.webhooks.replay(endpoint_id, since=...)` re-sends them (failed ones only, unless `include="all"`). `client.webhooks.deliveries()` and `client.webhooks.delivery()` read an endpoint's delivery log.
 
+## Balance, equity and margin
+
+`client.accounts.figures()` answers the account's balance, equity, margin, free margin, margin level, credit and open profit, as decimal strings in the account's currency. Without `fresh` it is the last read from the terminal (`source` `"snapshot"`, taken every 15 seconds while the account is online, with `observedAt`); `fresh=True` asks the terminal now (`source` `"live"`), and needs the account `ready` (`AccountNotReadyError` otherwise). `client.accounts.get()` carries the same figures, with `figuresObservedAt`.
+
+```python
+figures = client.accounts.figures(account_id, fresh=True)
+print(figures["balance"], figures["equity"], figures["freeMargin"], figures["marginLevel"])  # marginLevel is None while no margin is used
+```
+
+Webhooks do not carry figures — read them here.
+
+## Live prices
+
+`client.quotes.get()` reads bid, ask and spread for up to 20 broker `symbols` and `instruments` together from the account's own terminal — the prices that account trades at. The account must be online.
+
+```python
+for q in client.quotes.get(account_id, symbols=["EURUSD"], instruments=["XAUUSD"]):
+    if q["status"] != "ok":  # "unknown_symbol" or "no_price"
+        continue
+    print(q["symbol"], q["bid"], q["ask"], q["time"], q["brokerTime"], q["ageMs"], q["marketOpen"], q["stale"], q["tradeMode"])
+```
+
+Each quote carries `time` (UTC), `brokerTime` (the broker's own clock) and `ageMs`, so you can apply your own freshness rule. A closed market answers its last price with `marketOpen: False`; `stale` is true only while the market is open and the last tick is over 60 seconds old; `tradeMode` is `full`, `longOnly`, `shortOnly`, `closeOnly` or `disabled`. There is no stream: each account's terminal may be asked 300 times a minute (burst 50) across every caller, then `RateLimitedError`. A terminal still running an older worker — rare — raises `CapabilityUnavailableError` (from fresh figures too); don't retry it.
+
 ## Async
 
 ```python
@@ -257,7 +288,7 @@ asyncio.run(main())
 | Resource | Methods |
 |---|---|
 | `client.workspace` | `get()` |
-| `client.accounts` | `connect()`, `list()`, `get()`, `status()`, `warm()`, `prepare()`, `cool()`, `restart()`, `disconnect()`, `delete()`, `set_mode()` (alias `mode()`), `replace_credentials()`, `reconcile()`, `wait_until_ready()`, `bring_online()`, `symbols()`, `instruments()`, `sessions()` (market hours), `sync_symbols()` |
+| `client.accounts` | `connect()`, `list()`, `get()`, `status()`, `figures()` (balance, equity, margin; `fresh=True` asks the terminal now), `warm()`, `prepare()`, `cool()`, `restart()`, `disconnect()`, `delete()`, `set_mode()` (alias `mode()`), `replace_credentials()`, `reconcile()`, `wait_until_ready()`, `bring_online()`, `symbols()`, `instruments()`, `sessions()` (market hours), `sync_symbols()` |
 | `client.instruments` | `list()` — markets named once (`XAUUSD`, `US30`…); pass one as `instrument=` to `orders.market()` / `orders.pending()` to trade each account's own broker symbol for it |
 | `client.orders` | `market()`, `pending()`, `modify()`, `cancel()`, `get()`, `list()`, `iter()`, `deals()`, `wait_until_resolved()` |
 | `client.positions` | `list()`, `close()`, `modify()` |
@@ -265,6 +296,7 @@ asyncio.run(main())
 | `client.calculate` | `margin()`, `profit()` |
 | `client.waves` (= `client.multi_account_orders`) | `create()`, `get()`, `list()`, `cancel()`, `wait_until_settled()` |
 | `client.alert_hooks` | `create()`, `list()`, `get()`, `update()`, `rotate()`, `enable()`, `disable()`, `delete()`, `deliveries()` — TradingView alerts to MT5 |
+| `client.quotes` | `get()` — live bid and ask for up to 20 symbols or instruments, from the account's own broker |
 | `client.events` | `list()`, `iter()`, `get()` — the event log, for catching up after downtime |
 | `client.webhooks` | `deliveries()`, `delivery()`, `replay()` |
 | `client.admin.keys` | `list()`, `create()`, `get()`, `update()`, `revoke()` — needs an admin key |
