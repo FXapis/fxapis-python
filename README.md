@@ -39,6 +39,7 @@ MT5 only (MT4 is not supported).
 - [Quickstart](#quickstart)
 - [Handling order outcomes](#handling-order-outcomes)
 - [Click-to-trade and signals](#click-to-trade-and-signals)
+- [Managed copy trading](#managed-copy-trading)
 - [Copy trading: one trade on many accounts](#copy-trading-one-trade-on-many-accounts)
 - [Webhooks](#webhooks)
 - [Balance, equity and margin](#balance-equity-and-margin)
@@ -180,6 +181,33 @@ order = client.orders.market(
 
 The full walkthrough is in the [signals guide](https://docs.fxapis.com/signals).
 
+## Managed copy trading
+
+From 0.2.0. Mark an always-on, hedging account as a strategy, then subscribe follower accounts in the same workspace: fxapis copies the master's opens, closes, partial closes and stop moves on every follower server-side, with sizing, symbol mapping and risk limits of their own, and no code on your side. See the [copy-trading guide](https://docs.fxapis.com/guides/copy-trading).
+
+```python
+strategy = client.copy.strategies.create(account_id=master_id, name="Gold scalper")
+subscription = client.copy.subscriptions.create(
+    strategy_id=strategy["id"],
+    follower_account_id=follower_id,
+    settings={
+        "sizing": {"mode": "equity_ratio"},
+        "risk": {"limits": [{"period": "day", "metric": "equity", "maxLossPercent": 5, "closePositions": True}]},
+    },
+)
+
+# What each master change did on one follower, newest first, with the reason.
+for e in client.copy.iter_executions(follower_account_id=follower_id, status="skipped"):
+    print(e["reason"], e["detail"])
+```
+
+- `client.copy.strategies` and `client.copy.subscriptions` have `list()` (every page), `page()` (one page, with `next_cursor`) and `iter()` (pages fetched as you iterate). Subscriptions filter by `strategy_id` and `follower_account_id`.
+- `client.copy.executions()` is one page of the log and `client.copy.iter_executions()` walks all of it, filtered by `strategy_id`, `subscription_id`, `follower_account_id`, `status`, `reason` and `since`.
+- `client.copy.subscriptions.update(id, status="paused")` pauses a follower (`"active"`, `"paused"` or `"close_only"`), `reset(id)` brings a stopped one back, and `delete(id, close_positions=...)` removes it. `client.copy.strategies.archive(id)` retires a strategy once nothing copies it.
+- `AsyncFxapis` has the same `client.copy`, with `await` and `async for`.
+
+> **Copying is paused until scheduled maintenance.** Until then, calls that start copying — `strategies.create()`, `subscriptions.create()`, resuming a strategy or subscription, and `subscriptions.reset()` — raise `ServerError` with `code == "COPY_TRADING_PAUSED"` (HTTP 503). Reads, settings, pausing and deleting still work. `client.copy.status()` returns `{"paused": ..., "message": ...}`.
+
 ## Copy trading: one trade on many accounts
 
 A multi-account order ("execution wave") brings every account online, then sends the orders together:
@@ -300,6 +328,9 @@ asyncio.run(main())
 | `client.events` | `list()`, `iter()`, `get()` — the event log, for catching up after downtime |
 | `client.webhooks` | `deliveries()`, `delivery()`, `replay()` |
 | `client.admin.keys` | `list()`, `create()`, `get()`, `update()`, `revoke()` — needs an admin key |
+| `client.copy.strategies` | `list()` (every page), `page()`, `iter()`, `create()`, `get()`, `update()`, `archive()` — managed copy trading's masters |
+| `client.copy.subscriptions` | `list()` (every page; by `strategy_id`, `follower_account_id`), `page()`, `iter()`, `create()`, `get()`, `update()`, `delete()`, `reset()`, `links()` — its followers |
+| `client.copy` | `executions()` (one page), `iter_executions()` — the copy log, by strategy, subscription or `follower_account_id`; `status()` — whether copy trading is paused on this server |
 | `client.usage` | `get()`, `daily()` |
 | `client.plans` | `list()` |
 
