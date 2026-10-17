@@ -848,3 +848,121 @@ def test_capability_unavailable_is_its_own_error_and_is_not_retried(client: Fxap
     with pytest.raises(CapabilityUnavailableError):
         client.quotes.get(ACCOUNT, symbols=["EURUSD"])
     assert len(api.requests) == 1
+
+
+STRATEGY = {
+    "id": "s1",
+    "accountId": ACCOUNT,
+    "name": "Gold",
+    "status": "active",
+    "masterAlwaysOn": True,
+    "followers": 0,
+}
+SUBSCRIPTION = {
+    "id": "sub1",
+    "strategyId": "s1",
+    "followerAccountId": "f1",
+    "status": "active",
+    "settings": {"reverse": True},
+}
+
+
+def test_copy_strategies_and_subscriptions(client: Fxapis, api: Recorder) -> None:
+    api.responses.extend(
+        [
+            (201, {"data": STRATEGY}),
+            (201, {"data": SUBSCRIPTION}),
+            (200, {"data": {**SUBSCRIPTION, "status": "paused"}}),
+            (200, {"data": {"id": "sub1", "deleted": True, "closed": 2}}),
+            (200, {"data": {**SUBSCRIPTION, "status": "active"}}),
+        ]
+    )
+    strategy = client.copy.strategies.create(account_id=ACCOUNT, name="Gold")
+    assert strategy["masterAlwaysOn"] is True
+    assert api.body(0) == {"accountId": ACCOUNT, "name": "Gold"}
+
+    client.copy.subscriptions.create(strategy_id="s1", follower_account_id="f1", settings={"reverse": True})
+    assert api.requests[1].url.path == "/v1/copy/subscriptions"
+    assert api.body(1) == {"strategyId": "s1", "followerAccountId": "f1", "settings": {"reverse": True}}
+
+    client.copy.subscriptions.update("sub1", status="paused")
+    assert api.requests[2].method == "PATCH" and api.body(2) == {"status": "paused"}
+
+    gone = client.copy.subscriptions.delete("sub1", close_positions=True)
+    assert gone["closed"] == 2
+    assert api.requests[3].method == "DELETE" and api.requests[3].url.params["closePositions"] == "true"
+
+    client.copy.subscriptions.reset("sub1")
+    assert api.requests[4].url.path == "/v1/copy/subscriptions/sub1/reset"
+
+
+def test_copy_executions_page_and_iteration(client: Fxapis, api: Recorder) -> None:
+    row = {"id": "e1", "status": "skipped", "reason": "too_late", "signal": {"kind": "open"}}
+    api.responses.extend(
+        [
+            (200, {"data": [row], "page": {"hasMore": True, "nextCursor": "c1"}}),
+            (200, {"data": [{**row, "id": "e2"}], "page": {"hasMore": False, "nextCursor": None}}),
+        ]
+    )
+    ids = [e["id"] for e in client.copy.iter_executions(strategy_id="s1", reason="too_late")]
+    assert ids == ["e1", "e2"]
+    assert api.requests[0].url.params["reason"] == "too_late"
+    assert api.requests[1].url.params["cursor"] == "c1"
+
+
+def test_copy_lists_follow_every_page(client: Fxapis, api: Recorder) -> None:
+    api.responses.extend(
+        [
+            (200, {"data": [STRATEGY], "page": {"hasMore": True, "nextCursor": "s-c1"}}),
+            (200, {"data": [{**STRATEGY, "id": "s2"}], "page": {"hasMore": False, "nextCursor": None}}),
+            (200, {"data": [SUBSCRIPTION], "page": {"hasMore": True, "nextCursor": "sub-c1"}}),
+            (200, {"data": [{**SUBSCRIPTION, "id": "sub2"}], "page": {"hasMore": False, "nextCursor": None}}),
+        ]
+    )
+    strategies = client.copy.strategies.list()
+    assert [s["id"] for s in strategies] == ["s1", "s2"]
+    assert api.requests[0].url.params["limit"] == "100" and "cursor" not in api.requests[0].url.params
+    assert api.requests[1].url.params["cursor"] == "s-c1"
+
+    subscriptions = client.copy.subscriptions.list(strategy_id="s1", follower_account_id="f1")
+    assert [s["id"] for s in subscriptions] == ["sub1", "sub2"]
+    for request in api.requests[2:]:
+        assert request.url.params["strategyId"] == "s1"
+        assert request.url.params["followerAccountId"] == "f1"
+    assert api.requests[3].url.params["cursor"] == "sub-c1"
+
+
+def test_copy_list_pages_one_at_a_time(client: Fxapis, api: Recorder) -> None:
+    api.responses.extend(
+        [
+            (200, {"data": [SUBSCRIPTION], "page": {"hasMore": True, "nextCursor": "c9"}}),
+            (200, {"data": [STRATEGY], "page": {"hasMore": False, "nextCursor": None}}),
+        ]
+    )
+    page = client.copy.subscriptions.page(follower_account_id="f1", limit=1)
+    assert page.has_more and page.next_cursor == "c9" and [s["id"] for s in page] == ["sub1"]
+    assert api.requests[0].url.params["limit"] == "1"
+    strategies = client.copy.strategies.page(cursor="c0")
+    assert not strategies.has_more and api.requests[1].url.params["cursor"] == "c0"
+
+
+def test_copy_executions_by_follower(client: Fxapis, api: Recorder) -> None:
+    row = {"id": "e1", "status": "executed", "signal": {"kind": "open"}}
+    api.responses.extend(
+        [
+            (200, {"data": [row], "page": {"hasMore": False, "nextCursor": None}}),
+            (200, {"data": [row], "page": {"hasMore": False, "nextCursor": None}}),
+        ]
+    )
+    client.copy.executions(follower_account_id="f1")
+    assert api.requests[0].url.params["followerAccountId"] == "f1"
+    assert [e["id"] for e in client.copy.iter_executions(follower_account_id="f1")] == ["e1"]
+    assert api.requests[1].url.params["followerAccountId"] == "f1"
+
+
+def test_copy_status(client: Fxapis, api: Recorder) -> None:
+    message = "Copy trading is set up but copying starts after scheduled maintenance; you can review settings now."
+    api.responses.append((200, {"data": {"paused": True, "message": message}}))
+    status = client.copy.status()
+    assert status["paused"] is True and status["message"]
+    assert api.requests[0].method == "GET" and api.requests[0].url.path == "/v1/copy/status"

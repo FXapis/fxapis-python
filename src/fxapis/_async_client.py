@@ -31,6 +31,12 @@ from .types import (
     BrokerSymbol,
     CalculateResult,
     CoolResult,
+    CopyDeleted,
+    CopyExecution,
+    CopyLink,
+    CopyStatus,
+    CopyStrategy,
+    CopySubscription,
     Deal,
     DeleteResult,
     DisconnectResult,
@@ -107,6 +113,8 @@ class AsyncFxapis:
         self.quotes = Quotes(self)
         self.waves = Waves(self)
         self.alert_hooks = AlertHooks(self)
+        #: Managed copy trading: strategies, their subscribers, and the log of what was copied.
+        self.copy = Copy(self)
         #: The same as ``waves``: one trade placed on many accounts at once.
         self.multi_account_orders = self.waves
         self.usage = Usage_(self)
@@ -739,6 +747,206 @@ class AlertHooks(_Resource):
     async def deliveries(self, hook_id: str) -> builtins.list[AlertDelivery]:
         """The most recent alerts this hook received, and what became of each."""
         return cast("builtins.list[AlertDelivery]", await self._client._send(b.op_alert_deliveries(hook_id)))
+
+
+class CopyStrategies(_Resource):
+    """Always-on accounts whose trades are copied."""
+
+    async def list(self, *, page_size: int = 100) -> builtins.list[CopyStrategy]:
+        """Every strategy, newest first, archived ones included: all pages, fetched in turn."""
+        return [row async for row in self.iter(page_size=page_size)]
+
+    async def page(self, *, limit: int | None = None, cursor: str | None = None) -> Page[CopyStrategy]:
+        """One page, newest first. Pass ``next_cursor`` as ``cursor`` for the next."""
+        return cast(
+            "Page[CopyStrategy]", await self._client._send(b.op_list_copy_strategies(limit=limit, cursor=cursor))
+        )
+
+    async def iter(self, *, page_size: int = 100) -> AsyncIterator[CopyStrategy]:
+        """Every strategy, newest first, fetching pages as you iterate."""
+        cursor: str | None = None
+        while True:
+            page = await self.page(limit=page_size, cursor=cursor)
+            for row in page.data:
+                yield row
+            if not page.has_more or not page.next_cursor:
+                return
+            cursor = page.next_cursor
+
+    async def create(self, *, account_id: str, name: str) -> CopyStrategy:
+        return cast(CopyStrategy, await self._client._send(b.op_create_copy_strategy(account_id, name)))
+
+    async def get(self, strategy_id: str) -> CopyStrategy:
+        return cast(CopyStrategy, await self._client._send(b.op_get_copy_strategy(strategy_id)))
+
+    async def update(
+        self, strategy_id: str, *, name: str | None = None, status: Literal["active", "paused"] | None = None
+    ) -> CopyStrategy:
+        return cast(CopyStrategy, await self._client._send(b.op_update_copy_strategy(strategy_id, name, status)))
+
+    async def archive(self, strategy_id: str) -> CopyStrategy:
+        return cast(CopyStrategy, await self._client._send(b.op_archive_copy_strategy(strategy_id)))
+
+
+class CopySubscriptions(_Resource):
+    """Follower accounts copying a strategy, each with its own settings."""
+
+    async def list(
+        self, *, strategy_id: str | None = None, follower_account_id: str | None = None, page_size: int = 100
+    ) -> builtins.list[CopySubscription]:
+        """Every matching subscription, newest first: all pages, fetched in turn."""
+        return [
+            row
+            async for row in self.iter(
+                strategy_id=strategy_id, follower_account_id=follower_account_id, page_size=page_size
+            )
+        ]
+
+    async def page(
+        self,
+        *,
+        strategy_id: str | None = None,
+        follower_account_id: str | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Page[CopySubscription]:
+        """One page, newest first. Pass ``next_cursor`` as ``cursor`` for the next."""
+        request = b.op_list_copy_subscriptions(
+            strategy_id=strategy_id, follower_account_id=follower_account_id, limit=limit, cursor=cursor
+        )
+        return cast("Page[CopySubscription]", await self._client._send(request))
+
+    async def iter(
+        self, *, strategy_id: str | None = None, follower_account_id: str | None = None, page_size: int = 100
+    ) -> AsyncIterator[CopySubscription]:
+        """Every matching subscription, newest first, fetching pages as you iterate."""
+        cursor: str | None = None
+        while True:
+            page = await self.page(
+                strategy_id=strategy_id, follower_account_id=follower_account_id, limit=page_size, cursor=cursor
+            )
+            for row in page.data:
+                yield row
+            if not page.has_more or not page.next_cursor:
+                return
+            cursor = page.next_cursor
+
+    async def create(
+        self,
+        *,
+        strategy_id: str,
+        follower_account_id: str,
+        settings: dict[str, Any] | None = None,
+        status: Literal["active", "paused"] | None = None,
+    ) -> CopySubscription:
+        return cast(
+            CopySubscription,
+            await self._client._send(b.op_create_copy_subscription(strategy_id, follower_account_id, settings, status)),
+        )
+
+    async def get(self, subscription_id: str) -> CopySubscription:
+        return cast(CopySubscription, await self._client._send(b.op_get_copy_subscription(subscription_id)))
+
+    async def update(
+        self,
+        subscription_id: str,
+        *,
+        settings: dict[str, Any] | None = None,
+        status: Literal["active", "paused", "close_only"] | None = None,
+    ) -> CopySubscription:
+        return cast(
+            CopySubscription, await self._client._send(b.op_update_copy_subscription(subscription_id, settings, status))
+        )
+
+    async def delete(self, subscription_id: str, *, close_positions: bool) -> CopyDeleted:
+        return cast(
+            CopyDeleted, await self._client._send(b.op_delete_copy_subscription(subscription_id, close_positions))
+        )
+
+    async def reset(self, subscription_id: str) -> CopySubscription:
+        return cast(CopySubscription, await self._client._send(b.op_reset_copy_subscription(subscription_id)))
+
+    async def links(
+        self, subscription_id: str, *, state: Literal["open", "all"] | None = None
+    ) -> builtins.list[CopyLink]:
+        return cast("builtins.list[CopyLink]", await self._client._send(b.op_copy_links(subscription_id, state)))
+
+
+class Copy(_Resource):
+    """Managed copy trading."""
+
+    def __init__(self, client: AsyncFxapis) -> None:
+        super().__init__(client)
+        self.strategies = CopyStrategies(client)
+        self.subscriptions = CopySubscriptions(client)
+
+    async def status(self) -> CopyStatus:
+        """Whether copy trading is paused on this server.
+
+        While it is, making a strategy, subscribing, resuming and reset raise
+        ``COPY_TRADING_PAUSED`` (503).
+        """
+        request = b.op_copy_status()
+        return cast("CopyStatus", await self._client._send(request))
+
+    async def executions(
+        self,
+        *,
+        strategy_id: str | None = None,
+        subscription_id: str | None = None,
+        follower_account_id: str | None = None,
+        status: str | None = None,
+        reason: str | None = None,
+        since: Timestamp | None = None,
+        limit: int | None = None,
+        cursor: str | None = None,
+    ) -> Page[CopyExecution]:
+        """One page of the log, newest first."""
+        request = b.op_copy_executions(
+            strategy_id=strategy_id,
+            subscription_id=subscription_id,
+            follower_account_id=follower_account_id,
+            status=status,
+            reason=reason,
+            since=since,
+            limit=limit,
+            cursor=cursor,
+        )
+        return cast("Page[CopyExecution]", await self._client._send(request))
+
+    async def iter_executions(
+        self,
+        *,
+        strategy_id: str | None = None,
+        subscription_id: str | None = None,
+        follower_account_id: str | None = None,
+        status: str | None = None,
+        reason: str | None = None,
+        since: Timestamp | None = None,
+        page_size: int = 200,
+    ) -> AsyncIterator[CopyExecution]:
+        """The whole log, newest first, fetching pages as you iterate.
+
+        >>> async for execution in client.copy.iter_executions(strategy_id=strategy_id, status="skipped"):
+        ...     print(execution["reason"], execution["detail"])
+        """
+        cursor: str | None = None
+        while True:
+            page = await self.executions(
+                strategy_id=strategy_id,
+                subscription_id=subscription_id,
+                follower_account_id=follower_account_id,
+                status=status,
+                reason=reason,
+                since=since,
+                limit=page_size,
+                cursor=cursor,
+            )
+            for row in page.data:
+                yield row
+            if not page.has_more or not page.next_cursor:
+                return
+            cursor = page.next_cursor
 
 
 class Events(_Resource):

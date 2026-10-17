@@ -142,3 +142,38 @@ async def test_figures_and_quotes(api: Recorder, make_async: Callable[[], AsyncF
         assert await client.quotes.get(ACCOUNT, instruments=["XAUUSD"]) == []
     assert api.requests[0].url.params["fresh"] == "true"
     assert api.requests[1].url.params["instruments"] == "XAUUSD"
+
+
+async def test_async_copy_subscribe_and_delete(api: Recorder, make_async: Callable[[], AsyncFxapis]) -> None:
+    api.responses += [(201, {"data": {"id": "sub1"}}), (200, {"data": {"id": "sub1", "deleted": True, "closed": 0}})]
+    async with make_async() as client:
+        await client.copy.subscriptions.create(strategy_id="s1", follower_account_id="f1")
+        await client.copy.subscriptions.delete("sub1", close_positions=False)
+    assert api.body(0) == {"strategyId": "s1", "followerAccountId": "f1"}
+    assert api.requests[1].url.params["closePositions"] == "false"
+
+
+async def test_async_copy_lists_follow_every_page(api: Recorder, make_async: Callable[[], AsyncFxapis]) -> None:
+    api.responses += [
+        (200, {"data": [{"id": "s1"}], "page": {"hasMore": True, "nextCursor": "c1"}}),
+        (200, {"data": [{"id": "s2"}], "page": {"hasMore": False, "nextCursor": None}}),
+        (200, {"data": [{"id": "sub1"}], "page": {"hasMore": True, "nextCursor": "c2"}}),
+        (200, {"data": [{"id": "sub2"}], "page": {"hasMore": False, "nextCursor": None}}),
+        (200, {"data": [{"id": "e1"}], "page": {"hasMore": False, "nextCursor": None}}),
+    ]
+    async with make_async() as client:
+        assert [s["id"] for s in await client.copy.strategies.list()] == ["s1", "s2"]
+        subscriptions = await client.copy.subscriptions.list(follower_account_id="f1")
+        assert [s["id"] for s in subscriptions] == ["sub1", "sub2"]
+        assert [e["id"] async for e in client.copy.iter_executions(follower_account_id="f1")] == ["e1"]
+    assert api.requests[1].url.params["cursor"] == "c1"
+    assert api.requests[3].url.params["cursor"] == "c2"
+    assert api.requests[3].url.params["followerAccountId"] == "f1"
+    assert api.requests[4].url.params["followerAccountId"] == "f1"
+
+
+async def test_async_copy_status(api: Recorder, make_async: Callable[[], AsyncFxapis]) -> None:
+    api.responses += [(200, {"data": {"paused": False, "message": None}})]
+    async with make_async() as client:
+        assert await client.copy.status() == {"paused": False, "message": None}
+    assert api.requests[0].url.path == "/v1/copy/status"

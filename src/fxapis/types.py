@@ -55,6 +55,12 @@ __all__ = [
     "WebhookDeliveryDetail",
     "ReplayResult",
     "DeliveryState",
+    "CopyStrategy",
+    "CopySubscription",
+    "CopySubscriptionStatus",
+    "CopyExecution",
+    "CopyLink",
+    "CopyDeleted",
 ]
 
 AccountMode = Literal["always_on", "warm_on_demand", "cold"]
@@ -679,3 +685,81 @@ class ReplayResult(TypedDict, total=False):
     since: str
     until: str
     nextSince: str | None
+
+
+CopySubscriptionStatus = Literal["active", "paused", "close_only", "stopped"]
+
+
+class CopyStrategy(TypedDict, total=False):
+    """An always-on account whose trades are copied to its subscribers."""
+
+    id: str
+    accountId: str
+    name: str
+    status: Literal["active", "paused", "archived"]
+    masterAlwaysOn: bool
+    followers: int
+    createdAt: str
+    updatedAt: str
+
+
+class CopySubscription(TypedDict, total=False):
+    """A follower account copying a strategy, with its own settings (see the copy-trading guide)."""
+
+    id: str
+    strategyId: str
+    followerAccountId: str
+    status: CopySubscriptionStatus
+    stopReason: str | None
+    stoppedAt: str | None
+    settings: dict[str, Any]
+    follower: dict[str, Any]
+    lastExecution: dict[str, Any] | None
+    createdAt: str
+    updatedAt: str
+
+
+class CopyExecution(TypedDict, total=False):
+    """What one master change did on one follower: executed, skipped or failed, and why."""
+
+    id: str
+    strategyId: str
+    subscriptionId: str | None
+    followerAccountId: str
+    status: Literal["executed", "skipped", "failed", "pending"]
+    reason: str | None
+    detail: str | None
+    orderId: str | None
+    requestedVolume: str | None
+    latencyMs: int | None
+    createdAt: str
+    signal: dict[str, Any]
+
+
+class CopyLink(TypedDict, total=False):
+    """Which follower position copies which master position."""
+
+    id: str
+    subscriptionId: str
+    masterPositionId: str
+    followerAccountId: str
+    followerPositionId: str | None
+    symbol: str
+    side: Side
+    followerVolume: str
+    masterVolume: str
+    openedAt: str
+    closedAt: str | None
+
+
+class CopyStatus(TypedDict):
+    """Whether copy trading is paused on this server, and why in a sentence (None when it runs)."""
+
+    paused: bool
+    message: str | None
+
+
+class CopyDeleted(TypedDict):
+    id: str
+    deleted: bool
+    closed: int

@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-10-16
+
+- Added client.copy (sync and async): strategies, subscriptions (create, change, pause, reset, delete), executions with filters and page iterators, links, and status.
+- Copy trading is set up but copying starts after scheduled maintenance; until then calls that start copying raise an error with code COPY_TRADING_PAUSED (HTTP 503).
+
 ## [0.1.7] — 2026-10-15
 
 - client.accounts.figures(account_id, fresh=False): balance, equity, margin, free margin, margin level, credit and profit as decimal strings

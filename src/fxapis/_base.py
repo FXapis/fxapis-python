@@ -385,6 +385,111 @@ def op_alert_deliveries(hook_id: str) -> Request:
     return Request("GET", f"/v1/alert-hooks/{seg(hook_id)}/deliveries", safe=True)
 
 
+def op_list_copy_strategies(*, limit: int | None = None, cursor: str | None = None) -> Request:
+    params = query({"limit": limit, "cursor": cursor})
+    return Request("GET", "/v1/copy/strategies", params=params, returns="page", safe=True)
+
+
+def op_create_copy_strategy(account_id: str, name: str) -> Request:
+    return Request("POST", "/v1/copy/strategies", json={"accountId": account_id, "name": name})
+
+
+def op_get_copy_strategy(strategy_id: str) -> Request:
+    return Request("GET", f"/v1/copy/strategies/{seg(strategy_id)}", safe=True)
+
+
+def op_update_copy_strategy(strategy_id: str, name: str | None, status: str | None) -> Request:
+    return Request("PATCH", f"/v1/copy/strategies/{seg(strategy_id)}", json=compact({"name": name, "status": status}))
+
+
+def op_archive_copy_strategy(strategy_id: str) -> Request:
+    return Request("DELETE", f"/v1/copy/strategies/{seg(strategy_id)}")
+
+
+def op_list_copy_subscriptions(
+    *,
+    strategy_id: str | None = None,
+    follower_account_id: str | None = None,
+    limit: int | None = None,
+    cursor: str | None = None,
+) -> Request:
+    params = query(
+        {"strategyId": strategy_id, "followerAccountId": follower_account_id, "limit": limit, "cursor": cursor}
+    )
+    return Request("GET", "/v1/copy/subscriptions", params=params, returns="page", safe=True)
+
+
+def op_create_copy_subscription(
+    strategy_id: str, follower_account_id: str, settings: dict[str, Any] | None, status: str | None
+) -> Request:
+    body: dict[str, Any] = {"strategyId": strategy_id, "followerAccountId": follower_account_id}
+    if settings is not None:
+        body["settings"] = settings
+    if status is not None:
+        body["status"] = status
+    return Request("POST", "/v1/copy/subscriptions", json=body)
+
+
+def op_get_copy_subscription(subscription_id: str) -> Request:
+    return Request("GET", f"/v1/copy/subscriptions/{seg(subscription_id)}", safe=True)
+
+
+def op_update_copy_subscription(subscription_id: str, settings: dict[str, Any] | None, status: str | None) -> Request:
+    return Request(
+        "PATCH",
+        f"/v1/copy/subscriptions/{seg(subscription_id)}",
+        json=compact({"settings": settings, "status": status}),
+    )
+
+
+def op_delete_copy_subscription(subscription_id: str, close_positions: bool) -> Request:
+    return Request(
+        "DELETE",
+        f"/v1/copy/subscriptions/{seg(subscription_id)}",
+        params={"closePositions": "true" if close_positions else "false"},
+    )
+
+
+def op_reset_copy_subscription(subscription_id: str) -> Request:
+    return Request("POST", f"/v1/copy/subscriptions/{seg(subscription_id)}/reset")
+
+
+def op_copy_links(subscription_id: str, state: str | None) -> Request:
+    return Request(
+        "GET", f"/v1/copy/subscriptions/{seg(subscription_id)}/links", params=query({"state": state}), safe=True
+    )
+
+
+def op_copy_executions(
+    *,
+    strategy_id: str | None,
+    subscription_id: str | None,
+    status: str | None,
+    reason: str | None,
+    since: Timestamp | None,
+    limit: int | None,
+    cursor: str | None,
+    follower_account_id: str | None = None,
+) -> Request:
+    params = query(
+        {
+            "strategyId": strategy_id,
+            "subscriptionId": subscription_id,
+            "followerAccountId": follower_account_id,
+            "status": status,
+            "reason": reason,
+            "since": since,
+            "limit": limit,
+            "cursor": cursor,
+        }
+    )
+    return Request("GET", "/v1/copy/executions", params=params, returns="page", safe=True)
+
+
+def op_copy_status() -> Request:
+    return Request("GET", "/v1/copy/status", safe=True)
+
+
 def op_list_events(
     *,
     after: str | None,

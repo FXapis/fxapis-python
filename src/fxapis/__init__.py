@@ -49,7 +49,16 @@ from .errors import (
     TradingDisabledError,
     WaitTimeoutError,
 )
-from .types import Page
+from .types import (
+    CopyDeleted,
+    CopyExecution,
+    CopyLink,
+    CopyStatus,
+    CopyStrategy,
+    CopySubscription,
+    CopySubscriptionStatus,
+    Page,
+)
 from .webhooks import WebhookVerificationError
 
 __all__ = [
@@ -57,6 +66,13 @@ __all__ = [
     "AsyncFxapis",
     "UNSET",
     "Page",
+    "CopyStrategy",
+    "CopySubscription",
+    "CopySubscriptionStatus",
+    "CopyExecution",
+    "CopyLink",
+    "CopyDeleted",
+    "CopyStatus",
     "__version__",
     "webhooks",
     "FxapisError",
