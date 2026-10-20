@@ -176,7 +176,9 @@ class ProblemAction(TypedDict, total=False):
 class AccountProblem(TypedDict, total=False):
     """What is wrong with an account, in words, and what fixes it. ``None`` on a healthy account."""
 
-    code: Literal["LOGIN_REFUSED", "TRADING_DISABLED", "NEEDS_2FA", "NEEDS_CERTIFICATE", "CONNECTION_FAILED"]
+    code: Literal[
+        "LOGIN_REFUSED", "TRADING_DISABLED", "NEEDS_2FA", "NEEDS_CERTIFICATE", "CONNECTION_FAILED", "PLATFORM_ISSUE"
+    ]
     title: str
     explanation: str
     detail: str | None
@@ -403,6 +405,7 @@ KeyScope = Literal[
     "trading:reduce",
     "trading:execute",
     "history:read",
+    "billing:read",
     "webhooks:write",
 ]
 """The scopes an ordinary key may hold.
