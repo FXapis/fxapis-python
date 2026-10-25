@@ -177,7 +177,13 @@ class AccountProblem(TypedDict, total=False):
     """What is wrong with an account, in words, and what fixes it. ``None`` on a healthy account."""
 
     code: Literal[
-        "LOGIN_REFUSED", "TRADING_DISABLED", "NEEDS_2FA", "NEEDS_CERTIFICATE", "CONNECTION_FAILED", "PLATFORM_ISSUE"
+        "LOGIN_REFUSED",
+        "TRADING_DISABLED",
+        "NEEDS_2FA",
+        "NEEDS_CERTIFICATE",
+        "CONNECTION_FAILED",
+        "PLATFORM_ISSUE",
+        "SERVER_NOT_FOUND",
     ]
     title: str
     explanation: str

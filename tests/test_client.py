@@ -18,6 +18,7 @@ from fxapis import (
     Fxapis,
     FxapisError,
     IdempotencyKeyReusedError,
+    NoPriceError,
     NotFoundError,
     OrderRejectedError,
     OrderUnresolvedError,
@@ -336,6 +337,14 @@ def test_rejection_is_not_retried(client: Fxapis, api: Recorder) -> None:
         client.orders.market(ACCOUNT, symbol="EURUSD", side="buy", volume="0.01")
     assert len(api.requests) == 1
     assert caught.value.retryable is True  # a new attempt (new key) may succeed
+
+
+def test_no_price_is_not_retried(client: Fxapis, api: Recorder) -> None:
+    api.responses.append(error("NO_PRICE", 422, details=[{"orderId": "ord-3", "state": "failed", "retryable": False}]))
+    with pytest.raises(NoPriceError) as caught:
+        client.orders.market(ACCOUNT, symbol="USDJPY", side="sell", volume="0.10", idempotency_key="k1")
+    assert len(api.requests) == 1
+    assert caught.value.retryable is False
 
 
 def test_max_retries_zero(api: Recorder) -> None:

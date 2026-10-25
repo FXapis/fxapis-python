@@ -31,6 +31,7 @@ __all__ = [
     "RateLimitedError",
     "ServerError",
     "OrderRejectedError",
+    "NoPriceError",
     "OrderUnresolvedError",
     "SendFailedError",
     "AccountNotReadyError",
@@ -221,6 +222,19 @@ class OrderRejectedError(APIStatusError):
     """
 
 
+class NoPriceError(APIStatusError):
+    """422 ``NO_PRICE`` -- the broker had no current price for the symbol. Nothing was sent.
+
+    Usually the market is closed, or this broker does not offer the symbol.
+    Retrying at once cannot help, so the library never retries it for you.
+    Once the symbol is quoting, the same idempotency key may be reused.
+    """
+
+    @property
+    def retryable(self) -> bool:
+        return False
+
+
 class OrderUnresolvedError(APIStatusError):
     """503 ``ORDER_UNRESOLVED`` -- nobody knows yet whether the order reached the broker.
 
@@ -328,6 +342,7 @@ _BY_CODE: dict[str, type[APIStatusError]] = {
     "FEATURE_NOT_IN_PLAN": FeatureNotInPlanError,
     "RATE_LIMITED": RateLimitedError,
     "ORDER_REJECTED": OrderRejectedError,
+    "NO_PRICE": NoPriceError,
     "ORDER_UNRESOLVED": OrderUnresolvedError,
     "SEND_FAILED": SendFailedError,
     "ACCOUNT_NOT_READY": AccountNotReadyError,

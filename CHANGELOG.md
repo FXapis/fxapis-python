@@ -6,6 +6,11 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-10-24
+
+- NoPriceError for 422 NO_PRICE: the broker had no current price for the symbol (market closed, or not offered); nothing was sent and the library never retries it. Once the symbol is quoting, the same idempotency key may be reused.
+- SERVER_NOT_FOUND in problem.code: MetaTrader cannot find the account's server; the problem lists the broker's real servers to switch to.
+
 ## [0.2.1] — 2026-10-20
 
 - problem.code can be PLATFORM_ISSUE: accounts cannot come online because of a problem on fxapis's side; nothing about the account needs changing, and there are no actions.
