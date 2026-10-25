@@ -151,6 +151,7 @@ except (SendFailedError, AccountNotReadyError) as err:
 | `RateLimitedError` | `RATE_LIMITED` (429) | Yes, after `Retry-After` |
 | `OrderUnresolvedError` | `ORDER_UNRESOLVED` (503) | **Never** — poll the order |
 | `OrderRejectedError` | `ORDER_REJECTED` (422) | Never — needs a new key |
+| `NoPriceError` | `NO_PRICE` (422) | Never — the broker had no price (market closed, or symbol not offered); nothing was sent, so once it is quoting the same key may be reused |
 | `IdempotencyKeyReusedError` | `IDEMPOTENCY_KEY_REUSED` (409) | Never |
 | `QuotaExceededError` / `FeatureNotInPlanError` | 402 | Never |
 | `AuthenticationError`, `PermissionDeniedError`, `InvalidRequestError`, `NotFoundError` | 401 / 403 / 400 / 404 | Never |
