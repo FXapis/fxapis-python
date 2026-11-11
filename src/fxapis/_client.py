@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 import time
 from collections.abc import Iterator
+from datetime import date
 from typing import Any, Literal, cast
 
 import httpx
@@ -26,6 +27,7 @@ from .types import (
     BrokerServer,
     BrokerSymbol,
     CalculateResult,
+    Candles,
     CoolResult,
     CopyDeleted,
     CopyExecution,
@@ -42,6 +44,27 @@ from .types import (
     KeyLimits,
     KeyScope,
     MarketHours,
+    MarketlabsCalibration,
+    MarketlabsCandleSeries,
+    MarketlabsCorrelation,
+    MarketlabsEvent,
+    MarketlabsEventKind,
+    MarketlabsImpact,
+    MarketlabsIntelligence,
+    MarketlabsMarket,
+    MarketlabsNewsItem,
+    MarketlabsOfficialCalendar,
+    MarketlabsPairsInfo,
+    MarketlabsReplay,
+    MarketlabsResearch,
+    MarketlabsResearchReport,
+    MarketlabsResearchSummary,
+    MarketlabsSeries,
+    MarketlabsSourceStatus,
+    MarketlabsStrength,
+    MarketlabsToday,
+    MarketlabsTrackRecord,
+    MarketlabsWatchlistEntry,
     ModeResult,
     Order,
     OrderState,
@@ -55,10 +78,13 @@ from .types import (
     ReplayResult,
     Side,
     SymbolsSynced,
+    Timeframe,
     Usage,
     UsageDay,
     WarmResult,
     Wave,
+    WaveCloseResult,
+    WaveRetryInclude,
     WebhookDelivery,
     WebhookDeliveryDetail,
     Workspace,
@@ -113,6 +139,8 @@ class Fxapis:
         self.copy = Copy(self)
         #: The same as ``waves``: one trade placed on many accounts at once.
         self.multi_account_orders = self.waves
+        #: MarketLabs: official market data, the economic calendar, headlines and daily research.
+        self.marketlabs = MarketLabs(self)
         self.usage = Usage_(self)
         self.plans = Plans(self)
         self.events = Events(self)
@@ -287,6 +315,29 @@ class Accounts(_Resource):
         if (instrument is None) == (symbol is None):
             raise ValueError("Pass either instrument= or symbol=.")
         return cast(MarketHours, self._client._send(b.op_account_sessions(account_id, symbol, instrument)))
+
+    def candles(
+        self,
+        account_id: str,
+        *,
+        timeframe: Timeframe,
+        symbol: str | None = None,
+        instrument: str | None = None,
+        count: int | None = None,
+    ) -> Candles:
+        """Price history from this account's broker: open, high, low and close bars, oldest first.
+
+        ``timeframe`` is ``M1``, ``M5``, ``M15``, ``M30``, ``H1``, ``H4``, ``D1``, ``W1`` or ``MN1``;
+        ``count`` up to 1,000 bars (default 100) counting back from the current one, which is still
+        forming. Name an ``instrument`` (``"XAUUSD"``) or the broker's ``symbol``. Times are when each
+        bar opened, in UTC. The account must be online.
+        """
+        if (instrument is None) == (symbol is None):
+            raise ValueError("Pass either instrument= or symbol=.")
+        request = b.op_account_candles(
+            account_id, timeframe=timeframe, symbol=symbol, instrument=instrument, count=count
+        )
+        return cast(Candles, self._client._send(request))
 
     def sync_symbols(self, account_id: str) -> SymbolsSynced:
         """Reads the broker's symbol list again now. Needs the account online; it happens daily on its own."""
@@ -1095,6 +1146,52 @@ class Waves(_Resource):
         """Cancels a multi-account order, only while nothing has been sent."""
         return cast(Wave, self._client._send(b.op_cancel_wave(wave_id)))
 
+    def close(
+        self,
+        wave_id: str,
+        *,
+        account_ids: builtins.list[str] | None = None,
+        idempotency_key: str | None = None,
+    ) -> WaveCloseResult:
+        """Closes, on every account at once, the position each filled account's order opened.
+
+        Pass ``account_ids`` to close only some accounts. Every close carries an ``Idempotency-Key``
+        (generated, or yours): the same key again answers with the first result and never sends a
+        second close. A leg whose ``result`` is ``unresolved`` was sent and is being confirmed --
+        do not close it again; poll its ``closeOrderId``.
+        """
+        request = b.op_close_wave(wave_id, account_ids=account_ids, idempotency_key=idempotency_key)
+        return cast(WaveCloseResult, self._client._send(request))
+
+    def retry(
+        self,
+        wave_id: str,
+        *,
+        include: builtins.list[WaveRetryInclude] | None = None,
+        account_ids: builtins.list[str] | None = None,
+        barrier_policy: BarrierPolicy | None = None,
+        execute_at: Timestamp | None = None,
+        expires_at: Timestamp | None = None,
+        idempotency_key: str | None = None,
+    ) -> Wave:
+        """Places a new multi-account order for the accounts this one did not reach.
+
+        Only once the order has ended. By default it retries the ``skipped`` accounts (never sent);
+        add ``"rejected"`` to ``include`` to retry the ones the broker refused too. An ``unresolved``
+        account is never retried: it may have executed. Returns the new order, whose ``retryOf`` is
+        this one; follow it with ``wait_until_settled``.
+        """
+        request = b.op_retry_wave(
+            wave_id,
+            include=cast("builtins.list[str] | None", include),
+            account_ids=account_ids,
+            barrier_policy=barrier_policy,
+            execute_at=execute_at,
+            expires_at=expires_at,
+            idempotency_key=idempotency_key,
+        )
+        return cast(Wave, self._client._send(request))
+
     def wait_until_settled(self, wave_id: str, *, timeout: float = 300.0, poll_interval: float = 1.0) -> Wave:
         """Polls until every account has a result (``settled``), or it was ``cancelled`` / ``abandoned``."""
         deadline = time.monotonic() + timeout
@@ -1105,6 +1202,135 @@ class Waves(_Resource):
             if time.monotonic() + poll_interval > deadline:
                 raise WaitTimeoutError(f"wave {wave_id} still {wave.get('state')} after {timeout:g}s", last=wave)
             time.sleep(poll_interval)
+
+
+class MarketLabs(_Resource):
+    """MarketLabs: official market data, the economic calendar, headlines and daily research.
+
+    Needs a key with the ``marketlabs:read`` scope (``marketlabs:write`` to change the watchlist).
+    """
+
+    def today(self, *, hours: int | None = None, time_zone: str | None = None) -> MarketlabsToday:
+        """Your open positions and orders against the next events, research leans and the last 24 hours.
+
+        ``hours`` is the look-ahead window, 24 to 72 (default 24). ``time_zone`` is an IANA name such as
+        ``"Europe/London"`` for the day boundaries; times stay in UTC.
+        """
+        params = {"hours": hours, "timeZone": time_zone}
+        return cast(MarketlabsToday, self._client._send(b.op_marketlabs("/today", params)))
+
+    def calendar(
+        self,
+        *,
+        currencies: builtins.list[str] | None = None,
+        start: str | date | None = None,
+        end: str | date | None = None,
+        kind: builtins.list[MarketlabsEventKind] | None = None,
+        impact: builtins.list[MarketlabsImpact] | None = None,
+    ) -> MarketlabsOfficialCalendar:
+        """The official economic calendar, with forecasts, actual and previous figures where published.
+
+        Filter by ``currencies`` (``["USD", "EUR"]``), a date range (``start`` and ``end``, ``YYYY-MM-DD``,
+        UTC), ``kind`` (``release``, ``rate_decision``, ``survey``, ``earnings``) and ``impact``
+        (``high``, ``medium``, ``low``).
+        """
+        params = {
+            "currencies": b.comma_list(currencies),
+            "from": b.fmt_date(start),
+            "to": b.fmt_date(end),
+            "kind": b.comma_list(cast("builtins.list[str] | None", kind)),
+            "impact": b.comma_list(cast("builtins.list[str] | None", impact)),
+        }
+        return cast(MarketlabsOfficialCalendar, self._client._send(b.op_marketlabs("/events", params)))
+
+    def news(self, *, symbol: str | None = None, limit: int | None = None) -> builtins.list[MarketlabsNewsItem]:
+        """Recent headlines, newest first; ``symbol`` (``"EURUSD"``) narrows them to one pair. ``limit`` up to 100."""
+        params = {"symbol": symbol, "limit": limit}
+        return cast("builtins.list[MarketlabsNewsItem]", self._client._send(b.op_marketlabs("/news", params)))
+
+    def research(self, symbol: str) -> MarketlabsResearch:
+        """Today's research for a pair: its conclusion, the report and the evidence it rests on."""
+        return cast(MarketlabsResearch, self._client._send(b.op_marketlabs(f"/markets/{b.seg(symbol)}/research")))
+
+    def research_history(
+        self, *, symbol: str | None = None, limit: int | None = None, before: str | date | None = None
+    ) -> builtins.list[MarketlabsResearchSummary]:
+        """Past research reports, newest first. ``before`` is a date (``YYYY-MM-DD``) to page back from."""
+        params = {"symbol": symbol, "limit": limit, "before": b.fmt_date(before)}
+        return cast(
+            "builtins.list[MarketlabsResearchSummary]", self._client._send(b.op_marketlabs("/research", params))
+        )
+
+    def research_report(self, report_id: str) -> MarketlabsResearchReport:
+        """One research report, in full (``rr_…``)."""
+        return cast(MarketlabsResearchReport, self._client._send(b.op_marketlabs(f"/research/{b.seg(report_id)}")))
+
+    def track_record(self) -> MarketlabsTrackRecord:
+        """How often past research calls were right, per pair and horizon."""
+        return cast(MarketlabsTrackRecord, self._client._send(b.op_marketlabs("/research/track-record")))
+
+    def calibration(self) -> MarketlabsCalibration:
+        """How often past research calls were right, by the confidence they were made with."""
+        return cast(MarketlabsCalibration, self._client._send(b.op_marketlabs("/research/calibration")))
+
+    def watchlist(self) -> builtins.list[MarketlabsWatchlistEntry]:
+        """The pairs on this workspace's watchlist, each with its latest figures and research."""
+        return cast("builtins.list[MarketlabsWatchlistEntry]", self._client._send(b.op_marketlabs("/watchlist")))
+
+    def pairs(self) -> MarketlabsPairsInfo:
+        """The currencies, metals and pairs a watchlist can hold, and how many it can hold."""
+        return cast(MarketlabsPairsInfo, self._client._send(b.op_marketlabs("/pairs")))
+
+    def settings(self) -> dict[str, Any]:
+        """This workspace's MarketLabs settings; ``instruments`` is the watchlist."""
+        return cast("dict[str, Any]", self._client._send(b.op_marketlabs("/settings")))
+
+    def update_settings(self, *, instruments: builtins.list[str]) -> dict[str, Any]:
+        """Replaces the watchlist with these pairs (``["EURUSD", "XAUUSD"]``). Needs ``marketlabs:write``."""
+        return cast("dict[str, Any]", self._client._send(b.op_marketlabs_update_settings(instruments)))
+
+    def markets(self) -> builtins.list[MarketlabsMarket]:
+        """Markets with daily official data, and how recent it is."""
+        return cast("builtins.list[MarketlabsMarket]", self._client._send(b.op_marketlabs("/markets")))
+
+    def candles(self, symbol: str) -> MarketlabsCandleSeries:
+        """Daily official candles for a market."""
+        return cast(MarketlabsCandleSeries, self._client._send(b.op_marketlabs(f"/markets/{b.seg(symbol)}/candles")))
+
+    def replay(self, symbol: str, *, days: int | None = None) -> MarketlabsReplay:
+        """Stored daily candles for a market with the headlines and positioning of each day."""
+        request = b.op_marketlabs(f"/markets/{b.seg(symbol)}/replay", {"days": days})
+        return cast(MarketlabsReplay, self._client._send(request))
+
+    def series(self, symbol: str, *, days: int | None = None) -> MarketlabsSeries:
+        """A market's reference rate, volatility, positioning and events over time; ``days`` 20 to 365."""
+        request = b.op_marketlabs(f"/markets/{b.seg(symbol)}/series", {"days": days})
+        return cast(MarketlabsSeries, self._client._send(request))
+
+    def intelligence(self, symbol: str) -> MarketlabsIntelligence:
+        """The latest snapshot for a market: classification, summary, risk level and headlines."""
+        request = b.op_marketlabs(f"/markets/{b.seg(symbol)}/intelligence")
+        return cast(MarketlabsIntelligence, self._client._send(request))
+
+    def market_events(self, symbol: str) -> builtins.list[MarketlabsEvent]:
+        """The events attached to a market's latest snapshot."""
+        request = b.op_marketlabs(f"/markets/{b.seg(symbol)}/events")
+        return cast("builtins.list[MarketlabsEvent]", self._client._send(request))
+
+    def strength(self, *, days: int | None = None) -> MarketlabsStrength:
+        """Relative currency strength over ``days`` (2 to 365)."""
+        return cast(MarketlabsStrength, self._client._send(b.op_marketlabs("/strength", {"days": days})))
+
+    def correlation(
+        self, *, symbols: builtins.list[str] | None = None, days: int | None = None
+    ) -> MarketlabsCorrelation:
+        """Correlation between pairs (``symbols``, up to 12; default the watchlist) over ``days`` (2 to 365)."""
+        params = {"symbols": b.comma_list(symbols), "days": days}
+        return cast(MarketlabsCorrelation, self._client._send(b.op_marketlabs("/correlation", params)))
+
+    def sources(self) -> builtins.list[MarketlabsSourceStatus]:
+        """Each data source, with its credit and when it last updated."""
+        return cast("builtins.list[MarketlabsSourceStatus]", self._client._send(b.op_marketlabs("/sources")))
 
 
 class Usage_(_Resource):

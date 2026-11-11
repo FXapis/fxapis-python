@@ -6,6 +6,14 @@ while the version is `0.x`, a minor release (`0.2.0`) may change the API and a p
 
 ## [Unreleased]
 
+## [0.2.3] — 2026-11-11
+
+- Added accounts.candles: price history (candles) from an account's broker, M1 to MN1, up to 1,000 bars
+- Added waves.close (also multi_account_orders.close): close the positions a multi-account order opened, on every account at once
+- Added waves.retry: place a new multi-account order for the accounts the first one did not reach
+- Added client.marketlabs (beta): today, calendar, news, research, research history and reports, track record, calibration, watchlist and settings, market data, strength, correlation and sources
+- Added the response types for price history, multi-account close and MarketLabs
+
 ## [0.2.2] — 2026-10-24
 
 - NoPriceError for 422 NO_PRICE: the broker had no current price for the symbol (market closed, or not offered); nothing was sent and the library never retries it. Once the symbol is quoting, the same idempotency key may be reused.

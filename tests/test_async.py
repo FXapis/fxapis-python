@@ -177,3 +177,24 @@ async def test_async_copy_status(api: Recorder, make_async: Callable[[], AsyncFx
     async with make_async() as client:
         assert await client.copy.status() == {"paused": False, "message": None}
     assert api.requests[0].url.path == "/v1/copy/status"
+
+
+async def test_async_candles_wave_close_and_marketlabs(api: Recorder, make_async: Callable[[], AsyncFxapis]) -> None:
+    api.responses += [
+        (200, {"data": {"symbol": "EURUSD", "timeframe": "M5", "digits": 5, "candles": []}}),
+        (200, {"data": {"waveId": "w1", "legs": []}}),
+        (201, {"data": {"id": "w2", "retryOf": "w1"}}),
+        (200, {"data": {"generatedAt": "2026-11-11T12:00:00Z"}}),
+    ]
+    async with make_async() as client:
+        assert (await client.accounts.candles(ACCOUNT, symbol="EURUSD", timeframe="M5"))["digits"] == 5
+        await client.waves.close("w1")
+        assert (await client.waves.retry("w1"))["retryOf"] == "w1"
+        assert (await client.marketlabs.today())["generatedAt"]
+    assert [r.url.path for r in api.requests] == [
+        f"/v1/accounts/{ACCOUNT}/candles",
+        "/v1/execution-waves/w1/close",
+        "/v1/execution-waves/w1/retry",
+        "/v1/marketlabs/today",
+    ]
+    assert api.requests[1].headers["idempotency-key"]

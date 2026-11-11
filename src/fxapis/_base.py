@@ -11,7 +11,7 @@ import os
 import random
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any, Final
 from urllib.parse import quote
@@ -842,6 +842,92 @@ def op_list_waves() -> Request:
 
 def op_cancel_wave(wave_id: str) -> Request:
     return Request("POST", f"/v1/execution-waves/{seg(wave_id)}/cancel")
+
+
+def _wave_account_ids(account_ids: list[str] | None) -> list[str] | None:
+    if account_ids is None:
+        return None
+    ids = list(dict.fromkeys(account_ids))
+    if not ids:
+        raise ValueError("account_ids needs at least one account id (or leave it out for every account)")
+    if len(ids) > 1000:
+        raise ValueError("account_ids accepts at most 1,000 accounts")
+    return ids
+
+
+def op_close_wave(wave_id: str, *, account_ids: list[str] | None, idempotency_key: str | None) -> Request:
+    # The key is required: a repeated close without it would open opposing positions.
+    body = compact({"accountIds": _wave_account_ids(account_ids)})
+    return Request(
+        "POST",
+        f"/v1/execution-waves/{seg(wave_id)}/close",
+        json=body,
+        idempotency_key=idempotency_key or new_idempotency_key(),
+    )
+
+
+def op_retry_wave(
+    wave_id: str,
+    *,
+    include: list[str] | None,
+    account_ids: list[str] | None,
+    barrier_policy: str | None,
+    execute_at: Timestamp | None,
+    expires_at: Timestamp | None,
+    idempotency_key: str | None,
+) -> Request:
+    if include is not None and not include:
+        raise ValueError("include needs at least one of 'skipped' and 'rejected' (or leave it out)")
+    body = compact(
+        {
+            "include": None if include is None else list(dict.fromkeys(include)),
+            "accountIds": _wave_account_ids(account_ids),
+            "barrierPolicy": barrier_policy,
+            "executeAt": None if execute_at is None else fmt_time(execute_at),
+            "expiresAt": None if expires_at is None else fmt_time(expires_at),
+        }
+    )
+    return Request(
+        "POST",
+        f"/v1/execution-waves/{seg(wave_id)}/retry",
+        json=body,
+        idempotency_key=idempotency_key or new_idempotency_key(),
+    )
+
+
+def op_account_candles(
+    account_id: str, *, timeframe: str, symbol: str | None, instrument: str | None, count: int | None
+) -> Request:
+    params = query({"timeframe": timeframe, "symbol": symbol, "instrument": instrument, "count": count})
+    return Request("GET", f"/v1/accounts/{seg(account_id)}/candles", params=params, safe=True)
+
+
+# -- MarketLabs ------------------------------------------------------------------
+
+
+def comma_list(values: list[str] | None) -> str | None:
+    """A list sent as one comma-separated query value; ``None`` leaves it out."""
+    if values is None:
+        return None
+    if isinstance(values, str):
+        return values
+    return ",".join(values)
+
+
+def fmt_date(value: str | date | None) -> str | None:
+    if value is None or isinstance(value, str):
+        return value
+    if isinstance(value, datetime):
+        value = value.date()
+    return value.isoformat()
+
+
+def op_marketlabs(path: str, params: dict[str, Any] | None = None) -> Request:
+    return Request("GET", f"/v1/marketlabs{path}", params=query(params or {}), safe=True)
+
+
+def op_marketlabs_update_settings(instruments: list[str]) -> Request:
+    return Request("PATCH", "/v1/marketlabs/settings", json={"instruments": list(instruments)})
 
 
 def op_usage() -> Request:

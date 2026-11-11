@@ -45,6 +45,14 @@ __all__ = [
     "Wave",
     "WaveLeg",
     "WaveSummary",
+    "WaveRetryInclude",
+    "WaveCloseResultKind",
+    "WaveCloseSummary",
+    "WaveCloseLeg",
+    "WaveCloseResult",
+    "Timeframe",
+    "Candle",
+    "Candles",
     "Workspace",
     "Usage",
     "UsageDay",
@@ -61,6 +69,52 @@ __all__ = [
     "CopyExecution",
     "CopyLink",
     "CopyDeleted",
+    "MarketlabsLean",
+    "MarketlabsConfidence",
+    "MarketlabsMarket",
+    "MarketlabsCandleBar",
+    "MarketlabsCandleSeries",
+    "MarketlabsReplay",
+    "MarketlabsEventKind",
+    "MarketlabsEventStatus",
+    "MarketlabsOfficialEvent",
+    "MarketlabsOfficialCalendar",
+    "MarketlabsPairsInfo",
+    "MarketlabsResearchHint",
+    "MarketlabsWatchlistEntry",
+    "MarketlabsSeries",
+    "MarketlabsStrength",
+    "MarketlabsCorrelation",
+    "MarketlabsNewsItem",
+    "MarketlabsSourceStatus",
+    "MarketlabsCalibrationBin",
+    "MarketlabsCalibration",
+    "MarketlabsResearchView",
+    "MarketlabsResearchSummary",
+    "MarketlabsResearchClaim",
+    "MarketlabsResearchNotes",
+    "MarketlabsResearchRisk",
+    "MarketlabsResearchEvidence",
+    "MarketlabsResearchReport",
+    "MarketlabsResearch",
+    "MarketlabsTrackRecordEntry",
+    "MarketlabsTrackRecord",
+    "MarketlabsIntelligenceHeadline",
+    "MarketlabsIntelligencePositioning",
+    "MarketlabsIntelligence",
+    "MarketlabsEvent",
+    "MarketlabsTodayNextEvent",
+    "MarketlabsTodayItem",
+    "MarketlabsTodayAccount",
+    "MarketlabsTodayLeanPair",
+    "MarketlabsTodayLeanChange",
+    "MarketlabsToday",
+    "MarketlabsTodayWindow",
+    "MarketlabsTodayUpcomingEvent",
+    "MarketlabsTodayExposure",
+    "MarketlabsTodayUpcoming",
+    "MarketlabsTodayLeans",
+    "MarketlabsTodaySinceYesterday",
 ]
 
 AccountMode = Literal["always_on", "warm_on_demand", "cold"]
@@ -357,6 +411,7 @@ class CalculateResult(TypedDict, total=False):
 class WaveSummary(TypedDict, total=False):
     total: int
     filled: int
+    partiallyFilled: int
     rejected: int
     skipped: int
     unresolved: int
@@ -369,6 +424,8 @@ class WaveLeg(TypedDict, total=False):
     volume: str | None
     state: Literal["pending", "preparing", "ready", "dispatched", "filled", "rejected", "skipped", "unresolved"]
     stateDetail: str | None
+    filledVolume: str | None
+    partiallyFilled: bool
     sentAt: str | None
     settledAt: str | None
 
@@ -390,9 +447,68 @@ class Wave(TypedDict, total=False):
     releasedAt: str | None
     settledAt: str | None
     dispatchSpreadMs: int | None
+    retryOf: str | None
+    retriedBy: list[str]
     summary: WaveSummary
     legs: list[WaveLeg]
     createdAt: str
+
+
+WaveRetryInclude = Literal["skipped", "rejected"]
+WaveCloseResultKind = Literal["closed", "not_found", "rejected", "unresolved", "skipped"]
+
+
+class WaveCloseSummary(TypedDict, total=False):
+    total: int
+    closed: int
+    notFound: int
+    rejected: int
+    unresolved: int
+    skipped: int
+
+
+class WaveCloseLeg(TypedDict, total=False):
+    accountId: str
+    orderId: str | None
+    """The order that opened the position."""
+    positionId: str | None
+    result: WaveCloseResultKind
+    """``unresolved``: sent, result being confirmed -- do not resend; poll ``closeOrderId``."""
+    closeOrderId: str | None
+    detail: str | None
+
+
+class WaveCloseResult(TypedDict, total=False):
+    """``POST /v1/execution-waves/{id}/close``: what happened on each account."""
+
+    waveId: str
+    summary: WaveCloseSummary
+    legs: list[WaveCloseLeg]
+
+
+Timeframe = Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1", "MN1"]
+
+
+class Candle(TypedDict, total=False):
+    time: str
+    """When the bar opened, in UTC (RFC 3339)."""
+    open: str
+    high: str
+    low: str
+    close: str
+    tickVolume: int
+    """Price changes in the bar (MetaTrader's tick volume), not traded volume."""
+    spread: int
+
+
+class Candles(TypedDict, total=False):
+    """``GET /v1/accounts/{id}/candles``: price history from the account's broker, oldest first."""
+
+    symbol: str
+    instrument: str | None
+    timeframe: Timeframe
+    digits: int
+    candles: list[Candle]
 
 
 class Workspace(TypedDict, total=False):
@@ -467,6 +583,7 @@ class _Features(TypedDict, total=False):
     pendingOrders: bool
     alwaysOn: bool
     webhooks: bool
+    marketlabs: bool
 
 
 class _UsageCounts(TypedDict, total=False):
@@ -772,3 +889,423 @@ class CopyDeleted(TypedDict):
     id: str
     deleted: bool
     closed: int
+
+
+# --------------------------------------------------------------------- #
+# MarketLabs                                                            #
+# --------------------------------------------------------------------- #
+# Daily official data, the economic calendar, CFTC positioning and a
+# daily cited research brief per watchlist pair. Research, not trading
+# advice: it never places a trade. Listed only on plans that include
+# MarketLabs (see the MarketLabs guide).
+
+MarketlabsLean = Literal["bullish", "bearish", "neutral"] | None
+MarketlabsConfidence = Literal["low", "medium", "high"] | None
+MarketlabsImpact = Literal["high", "medium", "low"]
+MarketlabsEventKind = Literal["release", "rate_decision", "survey", "earnings"]
+MarketlabsEventStatus = Literal["scheduled", "released", "delayed", "cancelled"]
+
+
+class MarketlabsMarket(TypedDict, total=False):
+    symbol: str
+    available: bool
+    asOf: str | None
+    source: str | None
+
+
+class MarketlabsCandleBar(TypedDict, total=False):
+    time: int
+    """Unix seconds."""
+    open: str
+    high: str
+    low: str
+    close: str
+
+
+class MarketlabsCandleSeries(TypedDict, total=False):
+    symbol: str
+    source: str
+    candles: list[MarketlabsCandleBar]
+
+
+class MarketlabsReplay(MarketlabsCandleSeries, total=False):
+    barSize: str
+    days: int
+    tooCoarseFor: list[str]
+    headlines: list[dict[str, Any]]
+    positioning: dict[str, Any] | None
+    """The latest CFTC report for the pair, if one is published."""
+    treasury10y: dict[str, Any] | None
+    """The latest US Treasury 10-year par yield."""
+
+
+class MarketlabsOfficialEvent(TypedDict, total=False):
+    id: str
+    """Stable per series and period, e.g. bls:cpi_mom:2026-10: a rescheduled release keeps its id."""
+    title: str
+    occurredAt: str
+    """When the publisher releases it, in UTC."""
+    currency: str
+    """Three-letter currency code."""
+    kind: MarketlabsEventKind
+    impact: MarketlabsImpact
+    """fxapis' own ranking by topic, not a market forecast."""
+    unit: str | None
+    """Unit of actual and previous, e.g. %."""
+    period: str | None
+    """The period the figure covers, e.g. Oct 2026 or Q3 2026."""
+    previous: str | None
+    """The publisher's figure for the period before, as it stood before this release."""
+    actual: str | None
+    """The publisher's figure, once released. Surveys never carry figures."""
+    revisedPrevious: str | None
+    """The previous period's figure as revised in this release, when it changed."""
+    forecast: str | None
+    """Consensus forecast. Empty until a licensed forecast source is added."""
+    forecastSource: str | None
+    status: MarketlabsEventStatus
+    releasedAt: str | None
+    """When fxapis first had the figure."""
+    confirmed: bool
+    """False when the publisher's calendar could not be checked recently: the date may have moved."""
+    source: str
+    figureSource: str | None
+    attribution: str
+    """The source credit to show with the event."""
+
+
+class MarketlabsOfficialCalendar(TypedDict, total=False):
+    events: list[MarketlabsOfficialEvent]
+    blsConfigured: bool
+    """Whether US labour-market releases (CPI, payrolls) are configured."""
+    impactBasis: str
+    """What the impact ranking is."""
+
+
+class MarketlabsPairsInfo(TypedDict, total=False):
+    currencies: list[str]
+    positioning: dict[str, bool]
+    """Whether CFTC positioning is published for each currency."""
+    maxWatchlist: int
+    metals: list[str]
+    """Metals a watchlist may hold (gold and silver against the dollar)."""
+
+
+class MarketlabsResearchHint(TypedDict, total=False):
+    reportId: str
+    horizon: str
+    lean: MarketlabsLean
+    confidence: MarketlabsConfidence
+
+
+class MarketlabsWatchlistEntry(TypedDict, total=False):
+    symbol: str
+    asOf: str | None
+    last: str | None
+    change1d: str | None
+    sparkline: list[dict[str, str]]
+    realisedVol20: str | None
+    """20-day realised volatility."""
+    source: str
+    derived: bool
+    positioning: dict[str, Any] | None
+    research: MarketlabsResearchHint | None
+    """The latest research report for this pair, if any."""
+
+
+class MarketlabsSeries(TypedDict, total=False):
+    symbol: str
+    source: str
+    derived: bool
+    points: list[dict[str, str]]
+    volatility: list[dict[str, str]]
+    positioning: list[dict[str, Any]]
+    positioningCurrency: str | None
+    """The currency whose CFTC futures the positioning series is for."""
+    events: list[dict[str, Any]]
+
+
+class MarketlabsStrength(TypedDict, total=False):
+    asOf: str | None
+    window: int
+    """Days the score is computed over."""
+    basis: str
+    currencies: list[dict[str, str]]
+
+
+class MarketlabsCorrelation(TypedDict, total=False):
+    symbols: list[str]
+    window: int
+    matrix: list[list[float]]
+    """Correlation matrix, symbols[i] by symbols[j]."""
+    basis: str
+
+
+class MarketlabsNewsItem(TypedDict, total=False):
+    id: str
+    title: str
+    domain: str
+    seen: str
+    source: str
+    currencies: list[str]
+    sourceName: str | None
+    """The outlet's name."""
+    summary: str | None
+    """When available, a short summary written by fxapis from the headline, not the article."""
+    url: str | None
+
+
+class MarketlabsSourceStatus(TypedDict, total=False):
+    id: str
+    name: str
+    attribution: str
+    creditUrl: str | None
+    lastSuccess: str | None
+    lastFailureAt: str | None
+    state: Literal["fresh", "aging", "stale", "never"]
+
+
+class MarketlabsCalibrationBin(TypedDict, total=False):
+    confidence: Literal["low", "medium", "high"]
+    settled: int
+    hits: int | None
+    hitRate: str | None
+
+
+class MarketlabsCalibration(TypedDict, total=False):
+    minimum: int
+    """Scored calls needed before a hit rate is shown."""
+    settled: int
+    bins: list[MarketlabsCalibrationBin]
+
+
+class MarketlabsResearchView(TypedDict, total=False):
+    horizon: Literal["1d", "1w"]
+    lean: MarketlabsLean
+    confidence: MarketlabsConfidence
+    conclusion: str
+
+
+class MarketlabsResearchSummary(TypedDict, total=False):
+    id: str
+    symbol: str
+    ecbDate: str
+    """Date (UTC) of the reference rate the report used."""
+    status: str
+    createdAt: str | None
+    referenceRate: str | None
+    views: list[MarketlabsResearchView]
+
+
+class MarketlabsResearchClaim(TypedDict, total=False):
+    text: str
+    evidenceIds: list[str]
+
+
+class MarketlabsResearchNotes(TypedDict, total=False):
+    technical: list[MarketlabsResearchClaim]
+    macro: list[MarketlabsResearchClaim]
+    news: list[MarketlabsResearchClaim]
+    positioning: list[MarketlabsResearchClaim]
+
+
+class MarketlabsResearchRisk(TypedDict, total=False):
+    invalidation: list[MarketlabsResearchClaim]
+    eventRisk: list[MarketlabsResearchClaim]
+    dataGaps: list[str]
+
+
+class MarketlabsResearchEvidence(TypedDict, total=False):
+    id: str
+    group: str
+    source: str
+    label: str
+    date: str
+    value: str | None
+    title: str | None
+    derivedFrom: list[str]
+
+
+class MarketlabsResearchReport(MarketlabsResearchSummary, total=False):
+    """One research report, in full: ``GET /v1/marketlabs/research/{id}``."""
+
+    notes: MarketlabsResearchNotes
+    bull: list[MarketlabsResearchClaim]
+    bear: list[MarketlabsResearchClaim]
+    summary: list[MarketlabsResearchClaim]
+    upcomingEvents: list[dict[str, Any]]
+    risk: MarketlabsResearchRisk
+    evidence: list[MarketlabsResearchEvidence]
+
+
+class MarketlabsResearch(TypedDict, total=False):
+    """``GET /v1/marketlabs/markets/{symbol}/research``: today's research for a market."""
+
+    status: str
+    conclusion: str
+    evidenceIds: list[str]
+    asOf: str
+    report: MarketlabsResearchReport | None
+    """The latest report for this pair, or None when none has been published yet."""
+    today: Literal["ready", "pending", "unavailable"]
+    """Whether today's report is ready, still being written, or unavailable."""
+
+
+class MarketlabsTrackRecordEntry(TypedDict, total=False):
+    symbol: str
+    horizon: str
+    settled: int
+    hits: int | None
+    hitRate: str | None
+    neutralHitRate: str | None
+    status: str
+
+
+class MarketlabsTrackRecord(TypedDict, total=False):
+    minimum: int
+    """Scored calls needed, per pair and horizon, before a hit rate is shown."""
+    records: list[MarketlabsTrackRecordEntry]
+
+
+class MarketlabsIntelligenceHeadline(TypedDict, total=False):
+    title: str
+    seen: str
+    domain: str
+    source: str
+
+
+class MarketlabsIntelligencePositioning(TypedDict, total=False):
+    symbol: str
+    reportDate: str
+    noncommercialNet: str
+    commercialNet: str
+    source: str
+    caption: str
+
+
+class MarketlabsIntelligence(TypedDict, total=False):
+    """``GET /v1/marketlabs/markets/{symbol}/intelligence``: a cached snapshot shared by every workspace."""
+
+    symbol: str
+    asOf: str
+    freshness: Literal["fresh", "stale"]
+    classification: str
+    summary: str
+    baseline: str
+    """Decimal string."""
+    source: str
+    attribution: str
+    change: str | None
+    riskLevel: str
+    headlineNote: str | None
+    headlines: list[MarketlabsIntelligenceHeadline]
+    positioning: MarketlabsIntelligencePositioning | None
+
+
+class MarketlabsEvent(TypedDict, total=False):
+    id: str
+    symbol: str
+    title: str
+    occurredAt: str
+
+
+class MarketlabsTodayNextEvent(TypedDict, total=False):
+    id: str
+    title: str
+    occurredAt: str
+    currency: str
+    impact: Literal["high", "medium", "low"]
+
+
+class MarketlabsTodayItem(TypedDict, total=False):
+    kind: Literal["position", "order"]
+    id: str
+    symbol: str
+    """The broker's symbol."""
+    side: Side
+    volume: str
+    currencies: list[str]
+    unmapped: bool
+    """True when the symbol's currencies are not ones the calendar tracks."""
+    pair: str | None
+    """The research pair, when the instrument is a tracked currency pair."""
+    nextEvent: MarketlabsTodayNextEvent | None
+    eventCount: int
+    """High and medium impact events for its currencies in the window."""
+
+
+class MarketlabsTodayAccount(TypedDict, total=False):
+    accountId: str
+    name: str
+    state: str
+    observedAt: str | None
+    stale: bool
+    """True when the account was last read more than 15 minutes ago."""
+    items: list[MarketlabsTodayItem]
+
+
+# "from" is a Python keyword, so these two use the functional form.
+MarketlabsTodayWindow = TypedDict(
+    "MarketlabsTodayWindow",
+    {"from": str, "to": str, "hours": int, "timeZone": str | None},
+    total=False,
+)
+
+
+class MarketlabsTodayUpcomingEvent(MarketlabsOfficialEvent, total=False):
+    held: bool
+    """True when you hold a position or order in this currency."""
+
+
+class MarketlabsTodayLeanPair(TypedDict, total=False):
+    symbol: str
+    held: bool
+    watched: bool
+    latest: MarketlabsResearchSummary | None
+    previous: MarketlabsResearchSummary | None
+
+
+MarketlabsTodayLeanChange = TypedDict(
+    "MarketlabsTodayLeanChange",
+    {"symbol": str, "horizon": str, "from": str | None, "to": str | None, "reportId": str},
+    total=False,
+)
+
+
+class MarketlabsTodayExposure(TypedDict, total=False):
+    available: bool
+    reason: str
+    accounts: list[MarketlabsTodayAccount]
+    ordersNote: str
+    eventsAvailable: bool
+    """False when the calendar could not be read, so an item showing no event may still have one."""
+
+
+class MarketlabsTodayUpcoming(TypedDict, total=False):
+    available: bool
+    reason: str
+    events: list[MarketlabsTodayUpcomingEvent]
+
+
+class MarketlabsTodayLeans(TypedDict, total=False):
+    available: bool
+    reason: str
+    pairs: list[MarketlabsTodayLeanPair]
+
+
+class MarketlabsTodaySinceYesterday(TypedDict, total=False):
+    available: bool
+    reason: str
+    released: list[MarketlabsOfficialEvent]
+    leanChanges: list[MarketlabsTodayLeanChange]
+    headlines: list[MarketlabsNewsItem]
+
+
+class MarketlabsToday(TypedDict, total=False):
+    generatedAt: str
+    window: MarketlabsTodayWindow
+    exposure: MarketlabsTodayExposure
+    upcoming: MarketlabsTodayUpcoming
+    leans: MarketlabsTodayLeans
+    sinceYesterday: MarketlabsTodaySinceYesterday
+    sources: list[MarketlabsSourceStatus]

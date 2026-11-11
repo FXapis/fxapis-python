@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 
 import httpx
 import pytest
@@ -975,3 +976,167 @@ def test_copy_status(client: Fxapis, api: Recorder) -> None:
     status = client.copy.status()
     assert status["paused"] is True and status["message"]
     assert api.requests[0].method == "GET" and api.requests[0].url.path == "/v1/copy/status"
+
+
+# -- price history, multi-account close and retry, MarketLabs ------------------
+
+
+def test_account_candles(client: Fxapis, api: Recorder) -> None:
+    api.responses.append(
+        (200, {"data": {"symbol": "XAUUSD", "instrument": "XAUUSD", "timeframe": "H1", "digits": 2, "candles": []}})
+    )
+    candles = client.accounts.candles(ACCOUNT, instrument="XAUUSD", timeframe="H1", count=50)
+    assert candles["digits"] == 2
+    sent = api.requests[0]
+    assert sent.method == "GET"
+    assert sent.url.path == f"/v1/accounts/{ACCOUNT}/candles"
+    assert dict(sent.url.params) == {"timeframe": "H1", "instrument": "XAUUSD", "count": "50"}
+
+
+def test_account_candles_need_exactly_one_of_symbol_or_instrument(client: Fxapis) -> None:
+    with pytest.raises(ValueError, match="either instrument= or symbol="):
+        client.accounts.candles(ACCOUNT, timeframe="D1")
+    with pytest.raises(ValueError, match="either instrument= or symbol="):
+        client.accounts.candles(ACCOUNT, timeframe="D1", symbol="EURUSD", instrument="EURUSD")
+
+
+def test_wave_close_sends_an_idempotency_key_and_the_accounts(client: Fxapis, api: Recorder) -> None:
+    result = {"waveId": "w1", "summary": {"total": 1, "closed": 1}, "legs": [{"accountId": "a1", "result": "closed"}]}
+    api.responses += [(200, {"data": result}), (200, {"data": result})]
+    assert client.waves.close("w1", account_ids=["a1", "a1"])["summary"]["closed"] == 1
+    client.multi_account_orders.close("w1", idempotency_key="close-w1")
+    first, second = api.requests
+    assert first.method == "POST" and first.url.path == "/v1/execution-waves/w1/close"
+    assert api.body(0) == {"accountIds": ["a1"]}
+    assert first.headers["idempotency-key"]
+    assert api.body(1) == {}
+    assert second.headers["idempotency-key"] == "close-w1"
+
+
+def test_wave_close_is_not_resent_after_a_lost_connection(client: Fxapis, api: Recorder) -> None:
+    # The key makes a resend safe: the API answers the first result and never closes twice.
+    api.responses += [httpx.ConnectError("reset"), (200, {"data": {"waveId": "w1", "legs": []}})]
+    client.waves.close("w1")
+    assert api.requests[0].headers["idempotency-key"] == api.requests[1].headers["idempotency-key"]
+
+
+def test_wave_retry(client: Fxapis, api: Recorder) -> None:
+    api.responses += [(201, {"data": {"id": "w2", "state": "planned", "retryOf": "w1"}}), (201, {"data": {"id": "w3"}})]
+    wave = client.waves.retry(
+        "w1",
+        include=["skipped", "rejected"],
+        account_ids=["a1"],
+        barrier_policy="all-or-nothing",
+        execute_at=datetime(2026, 11, 12, 8, 0, tzinfo=timezone.utc),
+    )
+    assert wave["retryOf"] == "w1"
+    assert api.requests[0].url.path == "/v1/execution-waves/w1/retry"
+    assert api.body(0) == {
+        "include": ["skipped", "rejected"],
+        "accountIds": ["a1"],
+        "barrierPolicy": "all-or-nothing",
+        "executeAt": "2026-11-12T08:00:00Z",
+    }
+    assert api.requests[0].headers["idempotency-key"]
+    client.waves.retry("w1")
+    assert api.body(1) == {}
+
+
+def test_wave_close_and_retry_refuse_empty_lists(client: Fxapis) -> None:
+    with pytest.raises(ValueError, match="at least one account"):
+        client.waves.close("w1", account_ids=[])
+    with pytest.raises(ValueError, match="include needs"):
+        client.waves.retry("w1", include=[])
+
+
+def test_marketlabs_today_and_calendar(client: Fxapis, api: Recorder) -> None:
+    api.responses += [(200, {"data": {"generatedAt": "2026-11-11T12:00:00Z"}}), (200, {"data": {"events": []}})]
+    assert client.marketlabs.today(hours=48, time_zone="Europe/London")["generatedAt"]
+    assert api.requests[0].url.path == "/v1/marketlabs/today"
+    assert dict(api.requests[0].url.params) == {"hours": "48", "timeZone": "Europe/London"}
+    client.marketlabs.calendar(
+        currencies=["USD", "EUR"],
+        start=date(2026, 11, 11),
+        end="2026-11-18",
+        kind=["release"],
+        impact=["high", "medium"],
+    )
+    assert api.requests[1].url.path == "/v1/marketlabs/events"
+    assert dict(api.requests[1].url.params) == {
+        "currencies": "USD,EUR",
+        "from": "2026-11-11",
+        "to": "2026-11-18",
+        "kind": "release",
+        "impact": "high,medium",
+    }
+
+
+@pytest.mark.parametrize(
+    ("call", "method", "path", "params"),
+    [
+        (
+            lambda c: c.marketlabs.news(symbol="EURUSD", limit=5),
+            "GET",
+            "/v1/marketlabs/news",
+            {"symbol": "EURUSD", "limit": "5"},
+        ),
+        (lambda c: c.marketlabs.research("EURUSD"), "GET", "/v1/marketlabs/markets/EURUSD/research", {}),
+        (
+            lambda c: c.marketlabs.research_history(symbol="GBPUSD", before="2026-11-01"),
+            "GET",
+            "/v1/marketlabs/research",
+            {"symbol": "GBPUSD", "before": "2026-11-01"},
+        ),
+        (
+            lambda c: c.marketlabs.research_report("rr_0123456789abcdef"),
+            "GET",
+            "/v1/marketlabs/research/rr_0123456789abcdef",
+            {},
+        ),
+        (lambda c: c.marketlabs.track_record(), "GET", "/v1/marketlabs/research/track-record", {}),
+        (lambda c: c.marketlabs.calibration(), "GET", "/v1/marketlabs/research/calibration", {}),
+        (lambda c: c.marketlabs.watchlist(), "GET", "/v1/marketlabs/watchlist", {}),
+        (lambda c: c.marketlabs.pairs(), "GET", "/v1/marketlabs/pairs", {}),
+        (lambda c: c.marketlabs.settings(), "GET", "/v1/marketlabs/settings", {}),
+        (lambda c: c.marketlabs.markets(), "GET", "/v1/marketlabs/markets", {}),
+        (lambda c: c.marketlabs.candles("EURUSD"), "GET", "/v1/marketlabs/markets/EURUSD/candles", {}),
+        (
+            lambda c: c.marketlabs.replay("EURUSD", days=10),
+            "GET",
+            "/v1/marketlabs/markets/EURUSD/replay",
+            {"days": "10"},
+        ),
+        (
+            lambda c: c.marketlabs.series("EURUSD", days=90),
+            "GET",
+            "/v1/marketlabs/markets/EURUSD/series",
+            {"days": "90"},
+        ),
+        (lambda c: c.marketlabs.intelligence("EURUSD"), "GET", "/v1/marketlabs/markets/EURUSD/intelligence", {}),
+        (lambda c: c.marketlabs.market_events("EURUSD"), "GET", "/v1/marketlabs/markets/EURUSD/events", {}),
+        (lambda c: c.marketlabs.strength(days=30), "GET", "/v1/marketlabs/strength", {"days": "30"}),
+        (
+            lambda c: c.marketlabs.correlation(symbols=["EURUSD", "GBPUSD"]),
+            "GET",
+            "/v1/marketlabs/correlation",
+            {"symbols": "EURUSD,GBPUSD"},
+        ),
+        (lambda c: c.marketlabs.sources(), "GET", "/v1/marketlabs/sources", {}),
+    ],
+)
+def test_marketlabs_reads(
+    client: Fxapis, api: Recorder, call: Any, method: str, path: str, params: dict[str, str]
+) -> None:
+    api.responses.append((200, {"data": {}}))
+    call(client)
+    assert api.requests[0].method == method
+    assert api.requests[0].url.path == path
+    assert dict(api.requests[0].url.params) == params
+
+
+def test_marketlabs_update_settings(client: Fxapis, api: Recorder) -> None:
+    api.responses.append((200, {"data": {"instruments": ["EURUSD", "XAUUSD"]}}))
+    assert client.marketlabs.update_settings(instruments=["EURUSD", "XAUUSD"])["instruments"] == ["EURUSD", "XAUUSD"]
+    assert api.requests[0].method == "PATCH"
+    assert api.requests[0].url.path == "/v1/marketlabs/settings"
+    assert api.body(0) == {"instruments": ["EURUSD", "XAUUSD"]}
